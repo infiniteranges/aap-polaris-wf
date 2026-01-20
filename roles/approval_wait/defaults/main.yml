@@ -1,0 +1,10 @@
+---
+# Default variables for approval_wait role
+
+# Approval node information
+approval_node_id: "{{ ansible_awx_workflow_approval_node_id | default('') }}"
+approval_timeout: 3600  # 1 hour default timeout
+
+# Approval status tracking
+approval_status: "{{ ansible_awx_workflow_approval_status | default('pending') }}"
+approval_decision: "{{ ansible_awx_workflow_approval_decision | default('') }}"

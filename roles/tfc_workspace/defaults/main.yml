@@ -1,0 +1,22 @@
+---
+# Default variables for tfc_workspace role
+
+# Terraform Cloud configuration
+tfc_organization: "{{ tfc_org | default('') }}"
+tfc_workspace_name: "{{ tfc_workspace_name | default('') }}"
+tfc_api_token: "{{ tfc_api_token | default('') }}"
+tfc_base_url: "{{ tfc_base_url | default('https://app.terraform.io') }}"
+
+# Workspace configuration
+tfc_workspace_auto_apply: false
+tfc_workspace_execution_mode: "remote"
+tfc_workspace_terraform_version: null  # Use latest if not specified
+tfc_workspace_working_directory: null
+
+# VCS configuration (optional)
+tfc_workspace_vcs_repo: null
+tfc_workspace_vcs_branch: null
+tfc_workspace_vcs_identifier: null
+
+# Workspace variables (optional)
+tfc_workspace_variables: {}

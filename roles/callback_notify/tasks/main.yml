@@ -1,0 +1,59 @@
+---
+# Callback notification role
+# Sends HTTP POST callbacks to orchestration service
+
+- name: Validate callback URL
+  assert:
+    that:
+      - callback_url is defined
+      - callback_url | length > 0
+    fail_msg: "callback_url must be defined and non-empty"
+    success_msg: "Callback URL validated: {{ callback_url }}"
+
+- name: Build callback payload
+  set_fact:
+    callback_payload:
+      deploymentId: "{{ deployment_id }}"
+      executionId: "{{ execution_id }}"
+      aapWorkflowJobId: "{{ ansible_awx_workflow_job_id | default(ansible_awx_job_id) | default('unknown') }}"
+      phase: "{{ callback_phase | default('unknown') }}"
+      status: "{{ callback_status | default('unknown') }}"
+      outputs: "{{ callback_outputs | default({}) }}"
+      error: "{{ callback_error | default(null) }}"
+      planOutput: "{{ callback_plan_output | default(null) }}"
+      terraformRunId: "{{ terraform_run_id | default(null) }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+
+- name: Send callback to orchestration service
+  uri:
+    url: "{{ callback_url }}/{{ callback_endpoint | default('plan_success') }}"
+    method: POST
+    body: "{{ callback_payload }}"
+    body_format: json
+    status_code: [200, 201, 202]
+    timeout: "{{ callback_timeout }}"
+    headers:
+      Content-Type: "application/json"
+  register: callback_result
+  retries: "{{ callback_retries }}"
+  delay: "{{ callback_retry_delay }}"
+  ignore_errors: "{{ callback_ignore_errors | default(false) }}"
+  when: callback_url is defined and callback_url | length > 0
+
+- name: Log callback result
+  debug:
+    msg: "Callback sent successfully to {{ callback_url }}/{{ callback_endpoint | default('plan_success') }}"
+  when:
+    - callback_result is defined
+    - callback_result.status is defined
+    - callback_result.status >= 200
+    - callback_result.status < 300
+
+- name: Warn if callback failed
+  debug:
+    msg: "Callback failed: {{ callback_result.msg | default('Unknown error') }}"
+  when:
+    - callback_result is defined
+    - callback_result.status is defined
+    - callback_result.status >= 300
+    - callback_ignore_errors | default(false) == false

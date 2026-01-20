@@ -1,0 +1,136 @@
+---
+# Terraform execution playbook
+# Orchestrates terraform plan and apply phases with callbacks
+
+- name: Terraform Provision Playbook
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Operation type: create, update, or destroy
+    operation: "{{ tfc_operation | default('create') }}"
+    
+    # Callback configuration
+    callback_phase: "plan"
+    callback_status: "success"
+    callback_endpoint: "plan_success"
+    
+  tasks:
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform Execution Started ==="
+          - "Operation: {{ operation }}"
+          - "Repository: {{ tfc_pattern_repo_name }}"
+          - "Version: {{ tfc_pattern_version }}"
+          - "Workspace: {{ tfc_workspace_name }}"
+          - "Cloud Provider: {{ tfc_cloud_provider }}"
+
+    # ============================================
+    # Phase 1: Clone Repository
+    # ============================================
+    - name: Clone repository
+      include_role:
+        name: clone_repo
+      vars:
+        repo_url: "{{ tfc_pattern_repo_name }}"
+        repo_version: "{{ tfc_pattern_version }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 2: Terraform Plan
+    # ============================================
+    - name: Execute terraform plan
+      include_role:
+        name: terraform_plan
+      vars:
+        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        terraform_vars: "{{ tfc_variables | default({}) }}"
+      register: plan_result
+
+    # ============================================
+    # Phase 3: Send Plan Success Callback
+    # ============================================
+    - name: Send plan success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "success"
+        callback_endpoint: "plan_success"
+        callback_plan_output: "{{ plan_result.plan_output | default('') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: plan_result.plan_status == 'success'
+
+    # ============================================
+    # Phase 4: Send Plan Failed Callback
+    # ============================================
+    - name: Send plan failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "failed"
+        callback_endpoint: "plan_failed"
+        callback_error: "{{ plan_result.plan_error | default('Plan execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: plan_result.plan_status == 'failed'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 5: Terraform Apply (if plan succeeded)
+    # ============================================
+    - name: Execute terraform apply
+      include_role:
+        name: terraform_apply
+      vars:
+        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+      register: apply_result
+      when: plan_result.plan_status == 'success'
+
+    # ============================================
+    # Phase 6: Send Apply Success Callback
+    # ============================================
+    - name: Send apply success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "apply"
+        callback_status: "success"
+        callback_endpoint: "apply_success"
+        callback_outputs: "{{ apply_result.terraform_outputs | default({}) }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - apply_result.apply_status == 'success'
+
+    # ============================================
+    # Phase 7: Send Apply Failed Callback
+    # ============================================
+    - name: Send apply failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "apply"
+        callback_status: "failed"
+        callback_endpoint: "apply_failed"
+        callback_error: "{{ apply_result.apply_error | default('Apply execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - apply_result.apply_status == 'failed'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 8: Final Summary
+    # ============================================
+    - name: Display execution summary
+      debug:
+        msg:
+          - "=== Terraform Execution Complete ==="
+          - "Plan Status: {{ plan_result.plan_status | default('unknown') }}"
+          - "Apply Status: {{ apply_result.apply_status | default('skipped') }}"
+          - "Workspace: {{ tfc_workspace_name }}"

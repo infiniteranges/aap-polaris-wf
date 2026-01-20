@@ -1,0 +1,106 @@
+---
+# Terragrunt apply role
+# Executes terragrunt apply using plan file and captures outputs
+
+- name: Validate workspace path exists
+  assert:
+    that:
+      - workspace_path is defined
+      - workspace_path | length > 0
+    fail_msg: "workspace_path must be defined and non-empty"
+    success_msg: "Workspace path validated: {{ workspace_path }}"
+
+- name: Check if workspace directory exists
+  stat:
+    path: "{{ workspace_path }}"
+  register: workspace_stat
+
+- name: Fail if workspace directory does not exist
+  fail:
+    msg: "Workspace directory does not exist: {{ workspace_path }}"
+  when: not workspace_stat.stat.exists
+
+- name: Check if plan file exists
+  stat:
+    path: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_file }}"
+  register: plan_file_stat
+
+- name: Fail if plan file does not exist
+  fail:
+    msg: "Plan file does not exist: {{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_file }}. Run terragrunt plan first."
+  when: not plan_file_stat.stat.exists
+
+- name: Check if terragrunt binary is available
+  command: which {{ terragrunt_binary }}
+  register: terragrunt_binary_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if terragrunt binary not found
+  fail:
+    msg: "Terragrunt binary '{{ terragrunt_binary }}' not found in PATH"
+  when: terragrunt_binary_check.rc != 0
+
+- name: Build terragrunt apply command
+  set_fact:
+    terragrunt_apply_cmd: >-
+      {{ terragrunt_binary }} apply
+      {% if terraform_auto_approve %}
+      -auto-approve
+      {% endif %}
+      {{ plan_file }}
+      {% for arg in terragrunt_extra_args %}
+      {{ arg }}
+      {% endfor %}
+
+- name: Execute terragrunt apply
+  command: "{{ terragrunt_apply_cmd }}"
+  args:
+    chdir: "{{ workspace_path }}/{{ terragrunt_working_dir }}"
+  environment: "{{ terragrunt_env }}"
+  register: terragrunt_apply_result
+  failed_when: false  # We'll check the return code manually
+
+- name: Set apply status based on return code
+  set_fact:
+    apply_status: "{{ 'success' if terragrunt_apply_result.rc == 0 else 'failed' }}"
+    apply_output: "{{ terragrunt_apply_result.stdout | default('') }}"
+    apply_error: "{{ terragrunt_apply_result.stderr | default('') if terragrunt_apply_result.rc != 0 else null }}"
+
+- name: Get Terragrunt outputs
+  command: "{{ terragrunt_binary }} output -json"
+  args:
+    chdir: "{{ workspace_path }}/{{ terragrunt_working_dir }}"
+  environment: "{{ terragrunt_env }}"
+  register: terragrunt_outputs_result
+  failed_when: false
+  when: apply_status == 'success'
+
+- name: Parse Terragrunt outputs
+  set_fact:
+    terraform_outputs: "{{ terragrunt_outputs_result.stdout | from_json | default({}) }}"
+  when:
+    - apply_status == 'success'
+    - terragrunt_outputs_result.rc == 0
+    - terragrunt_outputs_result.stdout is defined
+
+- name: Save outputs to file
+  copy:
+    content: "{{ terraform_outputs | to_nice_json }}"
+    dest: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ outputs_file }}"
+    mode: '0644'
+  when: terraform_outputs is defined
+
+- name: Display apply summary
+  debug:
+    msg:
+      - "Terragrunt apply completed"
+      - "Status: {{ apply_status }}"
+      - "Return code: {{ terragrunt_apply_result.rc }}"
+      - "Outputs captured: {{ terraform_outputs is defined }}"
+      - "Working directory: {{ terragrunt_working_dir }}"
+
+- name: Fail if apply failed
+  fail:
+    msg: "Terragrunt apply failed: {{ apply_error }}"
+  when: apply_status == 'failed'

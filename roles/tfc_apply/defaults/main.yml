@@ -1,0 +1,17 @@
+---
+# Default variables for tfc_apply role
+
+# Terraform Cloud configuration
+tfc_organization: "{{ tfc_org | default('') }}"
+tfc_workspace_id: "{{ tfc_workspace_id | default('') }}"
+tfc_run_id: "{{ tfc_run_id | default('') }}"
+tfc_api_token: "{{ tfc_api_token | default('') }}"
+tfc_base_url: "{{ tfc_base_url | default('https://app.terraform.io') }}"
+
+# Apply configuration
+tfc_apply_message: "Apply run initiated by AAP workflow"
+
+# Polling configuration
+tfc_poll_interval: 5  # seconds
+tfc_poll_timeout: 3600  # 1 hour
+tfc_max_polls: 720  # 3600 / 5

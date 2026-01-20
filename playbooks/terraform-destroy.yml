@@ -1,0 +1,97 @@
+---
+# Terraform destroy playbook
+# Executes terraform destroy operation
+
+- name: Terraform Destroy Playbook
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    operation: "destroy"
+    
+  tasks:
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform Destroy Started ==="
+          - "Operation: {{ operation }}"
+          - "Repository: {{ tfc_pattern_repo_name }}"
+          - "Version: {{ tfc_pattern_version }}"
+          - "Workspace: {{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 1: Clone Repository
+    # ============================================
+    - name: Clone repository
+      include_role:
+        name: clone_repo
+      vars:
+        repo_url: "{{ tfc_pattern_repo_name }}"
+        repo_version: "{{ tfc_pattern_version }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 2: Initialize Terraform
+    # ============================================
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: "{{ '/tmp/workspaces/' + tfc_workspace_name }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+        AWS_REGION: "{{ tfc_variables.aws_region | default('us-east-1') }}"
+
+    # ============================================
+    # Phase 3: Terraform Destroy
+    # ============================================
+    - name: Execute terraform destroy
+      command: terraform destroy -auto-approve
+      args:
+        chdir: "{{ '/tmp/workspaces/' + tfc_workspace_name }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+        AWS_REGION: "{{ tfc_variables.aws_region | default('us-east-1') }}"
+      register: destroy_result
+      failed_when: false
+
+    # ============================================
+    # Phase 4: Send Destroy Success Callback
+    # ============================================
+    - name: Send destroy success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "destroy"
+        callback_status: "success"
+        callback_endpoint: "apply_success"  # Reuse apply_success endpoint
+        callback_outputs: {}
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: destroy_result.rc == 0
+
+    # ============================================
+    # Phase 5: Send Destroy Failed Callback
+    # ============================================
+    - name: Send destroy failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "destroy"
+        callback_status: "failed"
+        callback_endpoint: "apply_failed"
+        callback_error: "{{ destroy_result.stderr | default('Destroy execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: destroy_result.rc != 0
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 6: Final Summary
+    # ============================================
+    - name: Display destroy summary
+      debug:
+        msg:
+          - "=== Terraform Destroy Complete ==="
+          - "Status: {{ 'success' if destroy_result.rc == 0 else 'failed' }}"
+          - "Workspace: {{ tfc_workspace_name }}"

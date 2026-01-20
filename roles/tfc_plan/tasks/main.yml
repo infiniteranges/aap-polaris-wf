@@ -1,0 +1,100 @@
+---
+# TFC plan role
+# Creates a plan-only run in Terraform Cloud and monitors it
+
+- name: Validate required variables
+  assert:
+    that:
+      - tfc_workspace_id is defined
+      - tfc_workspace_id | length > 0
+      - tfc_api_token is defined
+      - tfc_api_token | length > 0
+    fail_msg: "tfc_workspace_id and tfc_api_token must be defined"
+    success_msg: "Required variables validated"
+
+- name: Create plan run
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/runs"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    body_format: json
+    body:
+      data:
+        type: "runs"
+        attributes:
+          message: "{{ tfc_run_message }}"
+          is-destroy: "{{ tfc_run_is_destroy }}"
+          auto-apply: "{{ tfc_run_auto_apply }}"
+        relationships:
+          workspace:
+            data:
+              type: "workspaces"
+              id: "{{ tfc_workspace_id }}"
+          configuration-version:
+            data:
+              type: "configuration-versions"
+              attributes:
+                auto-queue-runs: false
+  register: run_create_result
+  failed_when: run_create_result.status not in [200, 201]
+
+- name: Extract run ID
+  set_fact:
+    tfc_run_id: "{{ run_create_result.json.data.id }}"
+    tfc_plan_id: "{{ run_create_result.json.data.relationships.plan.data.id }}"
+
+- name: Display run information
+  debug:
+    msg:
+      - "TFC Run created"
+      - "Run ID: {{ tfc_run_id }}"
+      - "Plan ID: {{ tfc_plan_id }}"
+      - "Status: {{ run_create_result.json.data.attributes.status }}"
+
+- name: Wait for plan to complete
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/plans/{{ tfc_plan_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: 200
+  register: plan_status_result
+  until: plan_status_result.json.data.attributes.status in ['finished', 'errored', 'canceled']
+  retries: "{{ tfc_max_polls }}"
+  delay: "{{ tfc_poll_interval }}"
+  failed_when: false
+
+- name: Get plan output
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/plans/{{ tfc_plan_id }}/json-output"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: [200, 404]
+  register: plan_output_result
+  failed_when: false
+  when: plan_status_result.json.data.attributes.status == 'finished'
+
+- name: Set plan status
+  set_fact:
+    plan_status: "{{ 'success' if plan_status_result.json.data.attributes.status == 'finished' else 'failed' }}"
+    plan_output: "{{ plan_output_result.json | default({}) | to_nice_json if plan_output_result.status == 200 else 'Plan output not available' }}"
+    plan_error: "{{ plan_status_result.json.data.attributes.status if plan_status_result.json.data.attributes.status in ['errored', 'canceled'] else null }}"
+
+- name: Display plan summary
+  debug:
+    msg:
+      - "TFC Plan completed"
+      - "Status: {{ plan_status }}"
+      - "Plan Status: {{ plan_status_result.json.data.attributes.status }}"
+      - "Run ID: {{ tfc_run_id }}"
+      - "Plan ID: {{ tfc_plan_id }}"
+
+- name: Fail if plan failed
+  fail:
+    msg: "TFC plan failed with status: {{ plan_status_result.json.data.attributes.status }}"
+  when: plan_status == 'failed'

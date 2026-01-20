@@ -1,0 +1,194 @@
+---
+# Terraform execution playbook with approval node
+# Orchestrates terraform plan, approval, and apply phases with callbacks
+
+- name: Terraform Provision Playbook (With Approval)
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    operation: "{{ tfc_operation | default('create') }}"
+    
+  tasks:
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform Execution Started (With Approval) ==="
+          - "Operation: {{ operation }}"
+          - "Repository: {{ tfc_pattern_repo_name }}"
+          - "Version: {{ tfc_pattern_version }}"
+          - "Workspace: {{ tfc_workspace_name }}"
+          - "Cloud Provider: {{ tfc_cloud_provider }}"
+
+    # ============================================
+    # Phase 1: Clone Repository
+    # ============================================
+    - name: Clone repository
+      include_role:
+        name: clone_repo
+      vars:
+        repo_url: "{{ tfc_pattern_repo_name }}"
+        repo_version: "{{ tfc_pattern_version }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 2: Terraform Plan
+    # ============================================
+    - name: Execute terraform plan
+      include_role:
+        name: terraform_plan
+      vars:
+        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        terraform_vars: "{{ tfc_variables | default({}) }}"
+      register: plan_result
+
+    # ============================================
+    # Phase 3: Send Plan Success Callback
+    # ============================================
+    - name: Send plan success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "success"
+        callback_endpoint: "plan_success"
+        callback_plan_output: "{{ plan_result.plan_output | default('') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: plan_result.plan_status == 'success'
+
+    # ============================================
+    # Phase 4: Send Plan Failed Callback
+    # ============================================
+    - name: Send plan failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "failed"
+        callback_endpoint: "plan_failed"
+        callback_error: "{{ plan_result.plan_error | default('Plan execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: plan_result.plan_status == 'failed'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 5: Send Waiting for Approval Callback
+    # ============================================
+    - name: Send waiting for approval callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "waiting_approval"
+        callback_endpoint: "plan_success"  # Use plan_success endpoint, status indicates waiting
+        callback_plan_output: "{{ plan_result.plan_output | default('') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: plan_result.plan_status == 'success'
+
+    # ============================================
+    # Phase 6: Approval Node (AAP Workflow handles this)
+    # ============================================
+    # Note: The approval node is configured in the AAP workflow template
+    # This task validates the approval decision after the approval node completes
+    - name: Validate approval decision
+      include_role:
+        name: approval_wait
+      when: plan_result.plan_status == 'success'
+
+    # ============================================
+    # Phase 7: Send Approval Granted Callback
+    # ============================================
+    - name: Send approval granted callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "success"
+        callback_endpoint: "approval_granted"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+
+    # ============================================
+    # Phase 8: Send Approval Denied Callback
+    # ============================================
+    - name: Send approval denied callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "failed"
+        callback_endpoint: "approval_denied"
+        callback_error: "Workflow approval was denied"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - ansible_awx_workflow_approval_status | default('') == 'denied'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 9: Terraform Apply (only if approved)
+    # ============================================
+    - name: Execute terraform apply
+      include_role:
+        name: terraform_apply
+      vars:
+        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+      register: apply_result
+      when:
+        - plan_result.plan_status == 'success'
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+
+    # ============================================
+    # Phase 10: Send Apply Success Callback
+    # ============================================
+    - name: Send apply success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "apply"
+        callback_status: "success"
+        callback_endpoint: "apply_success"
+        callback_outputs: "{{ apply_result.terraform_outputs | default({}) }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+        - apply_result.apply_status == 'success'
+
+    # ============================================
+    # Phase 11: Send Apply Failed Callback
+    # ============================================
+    - name: Send apply failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "apply"
+        callback_status: "failed"
+        callback_endpoint: "apply_failed"
+        callback_error: "{{ apply_result.apply_error | default('Apply execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - plan_result.plan_status == 'success'
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+        - apply_result.apply_status == 'failed'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 12: Final Summary
+    # ============================================
+    - name: Display execution summary
+      debug:
+        msg:
+          - "=== Terraform Execution Complete ==="
+          - "Plan Status: {{ plan_result.plan_status | default('unknown') }}"
+          - "Approval Status: {{ ansible_awx_workflow_approval_status | default('unknown') }}"
+          - "Apply Status: {{ apply_result.apply_status | default('skipped') }}"
+          - "Workspace: {{ tfc_workspace_name }}"

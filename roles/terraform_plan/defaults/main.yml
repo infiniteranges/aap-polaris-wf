@@ -1,0 +1,28 @@
+---
+# Default variables for terraform_plan role
+
+# Workspace configuration
+workspace_path: "{{ repo_dest | default('/tmp/workspaces/' + tfc_workspace_name) }}"
+terraform_binary: "terraform"
+plan_file: "tfplan"
+plan_output_file: "plan_output.txt"
+
+# Terraform variables
+terraform_vars: "{{ tfc_variables | default({}) }}"
+terraform_var_file: null
+
+# Backend configuration
+terraform_backend_config: null
+terraform_backend_config_file: null
+
+# Additional terraform options
+terraform_extra_args: []
+terraform_parallelism: null
+
+# Environment variables for Terraform
+terraform_env:
+  AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+  AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+  AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
+  AWS_REGION: "{{ tfc_variables.aws_region | default(tfc_variables.ali_region) | default('us-east-1') }}"
+  TF_LOG: "{{ terraform_log_level | default('INFO') }}"

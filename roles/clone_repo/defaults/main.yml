@@ -1,0 +1,17 @@
+---
+# Default variables for clone_repo role
+
+# Repository configuration
+repo_url: "{{ tfc_pattern_repo_name | default('') }}"
+repo_version: "{{ tfc_pattern_version | default('main') }}"
+repo_dest: "/tmp/workspaces/{{ tfc_workspace_name | default('default-workspace') }}"
+
+# Git configuration
+git_update: true
+git_force: false
+git_depth: null  # Full clone by default
+
+# Credentials (optional)
+git_username: ""
+git_password: ""
+git_token: ""

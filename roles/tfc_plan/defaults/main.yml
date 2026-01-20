@@ -1,0 +1,21 @@
+---
+# Default variables for tfc_plan role
+
+# Terraform Cloud configuration
+tfc_organization: "{{ tfc_org | default('') }}"
+tfc_workspace_id: "{{ tfc_workspace_id | default('') }}"
+tfc_api_token: "{{ tfc_api_token | default('') }}"
+tfc_base_url: "{{ tfc_base_url | default('https://app.terraform.io') }}"
+
+# Run configuration
+tfc_run_message: "Plan run initiated by AAP workflow"
+tfc_run_is_destroy: false
+tfc_run_auto_apply: false
+
+# Variables for the run
+tfc_run_variables: {}
+
+# Polling configuration
+tfc_poll_interval: 5  # seconds
+tfc_poll_timeout: 3600  # 1 hour
+tfc_max_polls: 720  # 3600 / 5

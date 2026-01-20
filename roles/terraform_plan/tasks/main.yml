@@ -1,0 +1,101 @@
+---
+# Terraform plan role
+# Executes terraform plan and captures output
+
+- name: Validate workspace path exists
+  assert:
+    that:
+      - workspace_path is defined
+      - workspace_path | length > 0
+    fail_msg: "workspace_path must be defined and non-empty"
+    success_msg: "Workspace path validated: {{ workspace_path }}"
+
+- name: Check if workspace directory exists
+  stat:
+    path: "{{ workspace_path }}"
+  register: workspace_stat
+
+- name: Fail if workspace directory does not exist
+  fail:
+    msg: "Workspace directory does not exist: {{ workspace_path }}"
+  when: not workspace_stat.stat.exists
+
+- name: Check if terraform binary is available
+  command: which {{ terraform_binary }}
+  register: terraform_binary_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if terraform binary not found
+  fail:
+    msg: "Terraform binary '{{ terraform_binary }}' not found in PATH"
+  when: terraform_binary_check.rc != 0
+
+- name: Create terraform variables file if variables provided
+  copy:
+    content: |
+      {% for key, value in terraform_vars.items() %}
+      {{ key }} = "{{ value }}"
+      {% endfor %}
+    dest: "{{ workspace_path }}/terraform.tfvars"
+    mode: '0600'
+  when: terraform_vars is defined and terraform_vars | length > 0
+
+- name: Initialize Terraform
+  command: "{{ terraform_binary }} init"
+  args:
+    chdir: "{{ workspace_path }}"
+  environment: "{{ terraform_env }}"
+  register: terraform_init_result
+
+- name: Build terraform plan command
+  set_fact:
+    terraform_plan_cmd: >-
+      {{ terraform_binary }} plan
+      {% if terraform_parallelism is defined and terraform_parallelism is not none %}
+      -parallelism={{ terraform_parallelism }}
+      {% endif %}
+      {% if terraform_var_file is defined and terraform_var_file is not none %}
+      -var-file={{ terraform_var_file }}
+      {% endif %}
+      {% for key, value in terraform_vars.items() %}
+      -var="{{ key }}={{ value }}"
+      {% endfor %}
+      -out={{ plan_file }}
+      {% for arg in terraform_extra_args %}
+      {{ arg }}
+      {% endfor %}
+
+- name: Execute terraform plan
+  command: "{{ terraform_plan_cmd }}"
+  args:
+    chdir: "{{ workspace_path }}"
+  environment: "{{ terraform_env }}"
+  register: terraform_plan_result
+  failed_when: false  # We'll check the return code manually
+
+- name: Capture plan output to file
+  copy:
+    content: "{{ terraform_plan_result.stdout }}"
+    dest: "{{ workspace_path }}/{{ plan_output_file }}"
+    mode: '0644'
+  when: terraform_plan_result.stdout is defined
+
+- name: Set plan status based on return code
+  set_fact:
+    plan_status: "{{ 'success' if terraform_plan_result.rc == 0 else 'failed' }}"
+    plan_output: "{{ terraform_plan_result.stdout | default('') }}"
+    plan_error: "{{ terraform_plan_result.stderr | default('') if terraform_plan_result.rc != 0 else null }}"
+
+- name: Display plan summary
+  debug:
+    msg:
+      - "Terraform plan completed"
+      - "Status: {{ plan_status }}"
+      - "Return code: {{ terraform_plan_result.rc }}"
+      - "Plan file: {{ workspace_path }}/{{ plan_file }}"
+
+- name: Fail if plan failed
+  fail:
+    msg: "Terraform plan failed: {{ plan_error }}"
+  when: plan_status == 'failed'

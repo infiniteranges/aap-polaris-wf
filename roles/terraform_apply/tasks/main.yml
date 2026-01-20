@@ -1,0 +1,108 @@
+---
+# Terraform apply role
+# Executes terraform apply using plan file and captures outputs
+
+- name: Validate workspace path exists
+  assert:
+    that:
+      - workspace_path is defined
+      - workspace_path | length > 0
+    fail_msg: "workspace_path must be defined and non-empty"
+    success_msg: "Workspace path validated: {{ workspace_path }}"
+
+- name: Check if workspace directory exists
+  stat:
+    path: "{{ workspace_path }}"
+  register: workspace_stat
+
+- name: Fail if workspace directory does not exist
+  fail:
+    msg: "Workspace directory does not exist: {{ workspace_path }}"
+  when: not workspace_stat.stat.exists
+
+- name: Check if plan file exists
+  stat:
+    path: "{{ workspace_path }}/{{ plan_file }}"
+  register: plan_file_stat
+
+- name: Fail if plan file does not exist
+  fail:
+    msg: "Plan file does not exist: {{ workspace_path }}/{{ plan_file }}. Run terraform plan first."
+  when: not plan_file_stat.stat.exists
+
+- name: Check if terraform binary is available
+  command: which {{ terraform_binary }}
+  register: terraform_binary_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if terraform binary not found
+  fail:
+    msg: "Terraform binary '{{ terraform_binary }}' not found in PATH"
+  when: terraform_binary_check.rc != 0
+
+- name: Build terraform apply command
+  set_fact:
+    terraform_apply_cmd: >-
+      {{ terraform_binary }} apply
+      {% if terraform_auto_approve %}
+      -auto-approve
+      {% endif %}
+      {% if terraform_parallelism is defined and terraform_parallelism is not none %}
+      -parallelism={{ terraform_parallelism }}
+      {% endif %}
+      {{ plan_file }}
+      {% for arg in terraform_extra_args %}
+      {{ arg }}
+      {% endfor %}
+
+- name: Execute terraform apply
+  command: "{{ terraform_apply_cmd }}"
+  args:
+    chdir: "{{ workspace_path }}"
+  environment: "{{ terraform_env }}"
+  register: terraform_apply_result
+  failed_when: false  # We'll check the return code manually
+
+- name: Set apply status based on return code
+  set_fact:
+    apply_status: "{{ 'success' if terraform_apply_result.rc == 0 else 'failed' }}"
+    apply_output: "{{ terraform_apply_result.stdout | default('') }}"
+    apply_error: "{{ terraform_apply_result.stderr | default('') if terraform_apply_result.rc != 0 else null }}"
+
+- name: Get Terraform outputs
+  command: "{{ terraform_binary }} output -json"
+  args:
+    chdir: "{{ workspace_path }}"
+  environment: "{{ terraform_env }}"
+  register: terraform_outputs_result
+  failed_when: false
+  when: apply_status == 'success'
+
+- name: Parse Terraform outputs
+  set_fact:
+    terraform_outputs: "{{ terraform_outputs_result.stdout | from_json | default({}) }}"
+  when:
+    - apply_status == 'success'
+    - terraform_outputs_result.rc == 0
+    - terraform_outputs_result.stdout is defined
+
+- name: Save outputs to file
+  copy:
+    content: "{{ terraform_outputs | to_nice_json }}"
+    dest: "{{ workspace_path }}/{{ outputs_file }}"
+    mode: '0644'
+  when: terraform_outputs is defined
+
+- name: Display apply summary
+  debug:
+    msg:
+      - "Terraform apply completed"
+      - "Status: {{ apply_status }}"
+      - "Return code: {{ terraform_apply_result.rc }}"
+      - "Outputs captured: {{ terraform_outputs is defined }}"
+
+- name: Fail if apply failed
+  fail:
+    msg: "Terraform apply failed: {{ apply_error }}"
+  when: apply_status == 'failed'

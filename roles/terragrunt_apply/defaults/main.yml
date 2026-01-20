@@ -1,0 +1,24 @@
+---
+# Default variables for terragrunt_apply role
+
+# Workspace configuration
+workspace_path: "{{ repo_dest | default('/tmp/workspaces/' + tfc_workspace_name) }}"
+terragrunt_binary: "terragrunt"
+plan_file: "tgplan"
+outputs_file: "outputs.json"
+
+# Terragrunt working directory (relative to workspace_path)
+terragrunt_working_dir: "."
+
+# Apply options
+terraform_auto_approve: true
+terragrunt_extra_args: []
+
+# Environment variables for Terragrunt/Terraform
+terragrunt_env:
+  AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+  AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+  AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
+  AWS_REGION: "{{ tfc_variables.aws_region | default(tfc_variables.ali_region) | default('us-east-1') }}"
+  TF_LOG: "{{ terraform_log_level | default('INFO') }}"
+  TERRAGRUNT_LOG: "{{ terragrunt_log_level | default('INFO') }}"

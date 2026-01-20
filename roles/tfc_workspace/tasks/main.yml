@@ -1,0 +1,106 @@
+---
+# TFC workspace role
+# Creates or gets Terraform Cloud workspace via API
+
+- name: Validate required variables
+  assert:
+    that:
+      - tfc_organization is defined
+      - tfc_organization | length > 0
+      - tfc_workspace_name is defined
+      - tfc_workspace_name | length > 0
+      - tfc_api_token is defined
+      - tfc_api_token | length > 0
+    fail_msg: "tfc_organization, tfc_workspace_name, and tfc_api_token must be defined"
+    success_msg: "Required variables validated"
+
+- name: Check if workspace exists
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/organizations/{{ tfc_organization }}/workspaces/{{ tfc_workspace_name }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: [200, 404]
+  register: workspace_check
+  failed_when: false
+
+- name: Create workspace if it doesn't exist
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/organizations/{{ tfc_organization }}/workspaces"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    body_format: json
+    body:
+      data:
+        type: "workspaces"
+        attributes:
+          name: "{{ tfc_workspace_name }}"
+          auto-apply: "{{ tfc_workspace_auto_apply }}"
+          execution-mode: "{{ tfc_workspace_execution_mode }}"
+          {% if tfc_workspace_terraform_version is defined and tfc_workspace_terraform_version is not none %}
+          terraform-version: "{{ tfc_workspace_terraform_version }}"
+          {% endif %}
+          {% if tfc_workspace_working_directory is defined and tfc_workspace_working_directory is not none %}
+          working-directory: "{{ tfc_workspace_working_directory }}"
+          {% endif %}
+          {% if tfc_workspace_vcs_repo is defined and tfc_workspace_vcs_repo is not none %}
+          vcs-repo:
+            identifier: "{{ tfc_workspace_vcs_identifier | default(tfc_workspace_vcs_repo) }}"
+            branch: "{{ tfc_workspace_vcs_branch | default('') }}"
+            oauth-token-id: "{{ tfc_vcs_oauth_token_id | default('') }}"
+          {% endif %}
+  register: workspace_create_result
+  when: workspace_check.status == 404
+  failed_when: workspace_create_result.status not in [200, 201]
+
+- name: Get workspace ID from create result
+  set_fact:
+    tfc_workspace_id: "{{ workspace_create_result.json.data.id }}"
+  when:
+    - workspace_check.status == 404
+    - workspace_create_result.status in [200, 201]
+
+- name: Get workspace ID from existing workspace
+  set_fact:
+    tfc_workspace_id: "{{ workspace_check.json.data.id }}"
+  when: workspace_check.status == 200
+
+- name: Set workspace variables if provided
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/workspaces/{{ tfc_workspace_id }}/vars"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    body_format: json
+    body:
+      data:
+        type: "vars"
+        attributes:
+          key: "{{ item.key }}"
+          value: "{{ item.value }}"
+          category: "{{ item.category | default('terraform') }}"
+          sensitive: "{{ item.sensitive | default(false) }}"
+        relationships:
+          workspace:
+            data:
+              type: "workspaces"
+              id: "{{ tfc_workspace_id }}"
+  loop: "{{ tfc_workspace_variables | dict2items }}"
+  when:
+    - tfc_workspace_variables is defined
+    - tfc_workspace_variables | length > 0
+  ignore_errors: yes  # Variables may already exist
+
+- name: Display workspace information
+  debug:
+    msg:
+      - "TFC Workspace configured"
+      - "Organization: {{ tfc_organization }}"
+      - "Workspace Name: {{ tfc_workspace_name }}"
+      - "Workspace ID: {{ tfc_workspace_id }}"
+      - "Execution Mode: {{ tfc_workspace_execution_mode }}"
+      - "Auto-Apply: {{ tfc_workspace_auto_apply }}"

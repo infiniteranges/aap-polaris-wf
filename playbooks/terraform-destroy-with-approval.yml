@@ -1,0 +1,154 @@
+---
+# Terraform destroy playbook with approval node
+# Executes terraform destroy operation after approval
+
+- name: Terraform Destroy Playbook (With Approval)
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    operation: "destroy"
+    
+  tasks:
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform Destroy Started (With Approval) ==="
+          - "Operation: {{ operation }}"
+          - "Repository: {{ tfc_pattern_repo_name }}"
+          - "Version: {{ tfc_pattern_version }}"
+          - "Workspace: {{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 1: Clone Repository
+    # ============================================
+    - name: Clone repository
+      include_role:
+        name: clone_repo
+      vars:
+        repo_url: "{{ tfc_pattern_repo_name }}"
+        repo_version: "{{ tfc_pattern_version }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}"
+
+    # ============================================
+    # Phase 2: Send Waiting for Approval Callback
+    # ============================================
+    - name: Send waiting for approval callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "destroy"
+        callback_status: "waiting_approval"
+        callback_endpoint: "plan_success"  # Reuse plan_success endpoint
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+
+    # ============================================
+    # Phase 3: Approval Node (AAP Workflow handles this)
+    # ============================================
+    - name: Validate approval decision
+      include_role:
+        name: approval_wait
+
+    # ============================================
+    # Phase 4: Send Approval Granted Callback
+    # ============================================
+    - name: Send approval granted callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "success"
+        callback_endpoint: "approval_granted"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: ansible_awx_workflow_approval_status | default('') == 'approved'
+
+    # ============================================
+    # Phase 5: Send Approval Denied Callback
+    # ============================================
+    - name: Send approval denied callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "failed"
+        callback_endpoint: "approval_denied"
+        callback_error: "Workflow approval was denied"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: ansible_awx_workflow_approval_status | default('') == 'denied'
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 6: Initialize Terraform
+    # ============================================
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: "{{ '/tmp/workspaces/' + tfc_workspace_name }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+        AWS_REGION: "{{ tfc_variables.aws_region | default('us-east-1') }}"
+      when: ansible_awx_workflow_approval_status | default('') == 'approved'
+
+    # ============================================
+    # Phase 7: Terraform Destroy
+    # ============================================
+    - name: Execute terraform destroy
+      command: terraform destroy -auto-approve
+      args:
+        chdir: "{{ '/tmp/workspaces/' + tfc_workspace_name }}"
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
+        AWS_REGION: "{{ tfc_variables.aws_region | default('us-east-1') }}"
+      register: destroy_result
+      failed_when: false
+      when: ansible_awx_workflow_approval_status | default('') == 'approved'
+
+    # ============================================
+    # Phase 8: Send Destroy Success Callback
+    # ============================================
+    - name: Send destroy success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "destroy"
+        callback_status: "success"
+        callback_endpoint: "apply_success"
+        callback_outputs: {}
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+        - destroy_result.rc == 0
+
+    # ============================================
+    # Phase 9: Send Destroy Failed Callback
+    # ============================================
+    - name: Send destroy failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "destroy"
+        callback_status: "failed"
+        callback_endpoint: "apply_failed"
+        callback_error: "{{ destroy_result.stderr | default('Destroy execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+        - destroy_result.rc != 0
+      ignore_errors: yes
+
+    # ============================================
+    # Phase 10: Final Summary
+    # ============================================
+    - name: Display destroy summary
+      debug:
+        msg:
+          - "=== Terraform Destroy Complete ==="
+          - "Approval Status: {{ ansible_awx_workflow_approval_status | default('unknown') }}"
+          - "Destroy Status: {{ 'success' if destroy_result.rc == 0 else 'failed' if destroy_result is defined else 'skipped' }}"
+          - "Workspace: {{ tfc_workspace_name }}"

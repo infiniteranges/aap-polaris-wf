@@ -1,0 +1,16 @@
+---
+# Default variables for callback_notify role
+
+# Orchestration service callback URL
+callback_url: "{{ orchestration_callback_url | default('http://localhost:3000/api/orchestration/callbacks') }}"
+
+# Deployment identifiers
+deployment_id: "{{ tfc_workspace_name | default('unknown') }}"
+execution_id: "{{ ansible_date_time.epoch | default('unknown') }}"
+
+# Callback timeout
+callback_timeout: 30
+
+# Retry configuration
+callback_retries: 3
+callback_retry_delay: 5

@@ -1,0 +1,40 @@
+---
+# Approval wait role
+# This role is used in conjunction with AAP workflow approval nodes
+# The approval node itself handles the waiting, this role just validates the decision
+
+- name: Check if approval node was approved
+  assert:
+    that:
+      - approval_status is defined
+      - approval_status in ['approved', 'denied', 'pending', 'timed_out']
+    fail_msg: "Invalid approval status: {{ approval_status }}"
+    success_msg: "Approval status validated: {{ approval_status }}"
+
+- name: Display approval decision
+  debug:
+    msg:
+      - "=== Approval Node Decision ==="
+      - "Status: {{ approval_status }}"
+      - "Decision: {{ approval_decision | default('N/A') }}"
+      - "Node ID: {{ approval_node_id }}"
+
+- name: Fail if approval was denied
+  fail:
+    msg: "Workflow approval was denied. Execution stopped."
+  when: approval_status == 'denied'
+
+- name: Fail if approval timed out
+  fail:
+    msg: "Workflow approval timed out. Execution stopped."
+  when: approval_status == 'timed_out'
+
+- name: Warn if approval is still pending
+  debug:
+    msg: "WARNING: Approval status is still pending. This should not happen after approval node."
+  when: approval_status == 'pending'
+
+- name: Success message for approved workflow
+  debug:
+    msg: "Approval granted. Proceeding with execution."
+  when: approval_status == 'approved'

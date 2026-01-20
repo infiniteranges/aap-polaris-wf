@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: Polaris Team
+  description: Execute terraform apply
+  license: MIT
+  min_ansible_version: '2.14'
+  platforms: []
+  galaxy_tags: []
+
+dependencies: []

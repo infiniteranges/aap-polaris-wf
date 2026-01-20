@@ -1,0 +1,103 @@
+---
+# TFC apply role
+# Creates an apply run in Terraform Cloud and monitors it
+
+- name: Validate required variables
+  assert:
+    that:
+      - tfc_run_id is defined
+      - tfc_run_id | length > 0
+      - tfc_api_token is defined
+      - tfc_api_token | length > 0
+    fail_msg: "tfc_run_id and tfc_api_token must be defined"
+    success_msg: "Required variables validated"
+
+- name: Get run details to find apply ID
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/runs/{{ tfc_run_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: 200
+  register: run_details_result
+
+- name: Extract apply ID
+  set_fact:
+    tfc_apply_id: "{{ run_details_result.json.data.relationships.apply.data.id }}"
+  when: run_details_result.json.data.relationships.apply.data is defined
+
+- name: Wait for apply to be available
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/runs/{{ tfc_run_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: 200
+  register: run_status_result
+  until: run_status_result.json.data.relationships.apply.data is defined
+  retries: 60
+  delay: 2
+  failed_when: false
+
+- name: Extract apply ID after waiting
+  set_fact:
+    tfc_apply_id: "{{ run_status_result.json.data.relationships.apply.data.id }}"
+  when: run_status_result.json.data.relationships.apply.data is defined
+
+- name: Wait for apply to complete
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/applies/{{ tfc_apply_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: 200
+  register: apply_status_result
+  until: apply_status_result.json.data.attributes.status in ['finished', 'errored', 'canceled']
+  retries: "{{ tfc_max_polls }}"
+  delay: "{{ tfc_poll_interval }}"
+  failed_when: false
+
+- name: Get workspace outputs
+  uri:
+    url: "{{ tfc_base_url }}/api/v2/workspaces/{{ tfc_workspace_id }}/current-state-version/outputs"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ tfc_api_token }}"
+      Content-Type: "application/vnd.api+json"
+    status_code: [200, 404]
+  register: outputs_result
+  failed_when: false
+  when:
+    - apply_status_result.json.data.attributes.status == 'finished'
+    - tfc_workspace_id is defined
+
+- name: Parse outputs
+  set_fact:
+    terraform_outputs: "{{ outputs_result.json.data | json_query('[].{key: attributes.name, value: attributes.value}') | items2dict | default({}) }}"
+  when:
+    - apply_status_result.json.data.attributes.status == 'finished'
+    - outputs_result.status == 200
+    - outputs_result.json.data is defined
+
+- name: Set apply status
+  set_fact:
+    apply_status: "{{ 'success' if apply_status_result.json.data.attributes.status == 'finished' else 'failed' }}"
+    apply_error: "{{ apply_status_result.json.data.attributes.status if apply_status_result.json.data.attributes.status in ['errored', 'canceled'] else null }}"
+
+- name: Display apply summary
+  debug:
+    msg:
+      - "TFC Apply completed"
+      - "Status: {{ apply_status }}"
+      - "Apply Status: {{ apply_status_result.json.data.attributes.status }}"
+      - "Run ID: {{ tfc_run_id }}"
+      - "Apply ID: {{ tfc_apply_id }}"
+      - "Outputs captured: {{ terraform_outputs is defined }}"
+
+- name: Fail if apply failed
+  fail:
+    msg: "TFC apply failed with status: {{ apply_status_result.json.data.attributes.status }}"
+  when: apply_status == 'failed'

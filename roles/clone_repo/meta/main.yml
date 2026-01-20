@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: Polaris Team
+  description: Clone Git repository and checkout specific version
+  license: MIT
+  min_ansible_version: '2.14'
+  platforms: []
+  galaxy_tags: []
+
+dependencies: []

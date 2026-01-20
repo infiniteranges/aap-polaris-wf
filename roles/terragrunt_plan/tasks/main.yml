@@ -1,0 +1,102 @@
+---
+# Terragrunt plan role
+# Executes terragrunt plan and captures output
+
+- name: Validate workspace path exists
+  assert:
+    that:
+      - workspace_path is defined
+      - workspace_path | length > 0
+    fail_msg: "workspace_path must be defined and non-empty"
+    success_msg: "Workspace path validated: {{ workspace_path }}"
+
+- name: Check if workspace directory exists
+  stat:
+    path: "{{ workspace_path }}"
+  register: workspace_stat
+
+- name: Fail if workspace directory does not exist
+  fail:
+    msg: "Workspace directory does not exist: {{ workspace_path }}"
+  when: not workspace_stat.stat.exists
+
+- name: Check if terragrunt binary is available
+  command: which {{ terragrunt_binary }}
+  register: terragrunt_binary_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if terragrunt binary not found
+  fail:
+    msg: "Terragrunt binary '{{ terragrunt_binary }}' not found in PATH"
+  when: terragrunt_binary_check.rc != 0
+
+- name: Check if terragrunt config file exists
+  stat:
+    path: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ terragrunt_config_file }}"
+  register: terragrunt_config_stat
+
+- name: Warn if terragrunt config file not found
+  debug:
+    msg: "Warning: Terragrunt config file not found at {{ workspace_path }}/{{ terragrunt_working_dir }}/{{ terragrunt_config_file }}. Terragrunt may use defaults."
+  when: not terragrunt_config_stat.stat.exists
+
+- name: Create terraform variables file if variables provided
+  copy:
+    content: |
+      {% for key, value in terraform_vars.items() %}
+      {{ key }} = "{{ value }}"
+      {% endfor %}
+    dest: "{{ workspace_path }}/{{ terragrunt_working_dir }}/terraform.tfvars"
+    mode: '0600'
+  when: terraform_vars is defined and terraform_vars | length > 0
+
+- name: Build terragrunt plan command
+  set_fact:
+    terragrunt_plan_cmd: >-
+      {{ terragrunt_binary }} plan
+      {% if terraform_var_file is defined and terraform_var_file is not none %}
+      -var-file={{ terraform_var_file }}
+      {% endif %}
+      {% for key, value in terraform_vars.items() %}
+      -var="{{ key }}={{ value }}"
+      {% endfor %}
+      -out={{ plan_file }}
+      {% for arg in terragrunt_extra_args %}
+      {{ arg }}
+      {% endfor %}
+
+- name: Execute terragrunt plan
+  command: "{{ terragrunt_plan_cmd }}"
+  args:
+    chdir: "{{ workspace_path }}/{{ terragrunt_working_dir }}"
+  environment: "{{ terragrunt_env }}"
+  register: terragrunt_plan_result
+  failed_when: false  # We'll check the return code manually
+
+- name: Capture plan output to file
+  copy:
+    content: "{{ terragrunt_plan_result.stdout }}"
+    dest: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_output_file }}"
+    mode: '0644'
+  when: terragrunt_plan_result.stdout is defined
+
+- name: Set plan status based on return code
+  set_fact:
+    plan_status: "{{ 'success' if terragrunt_plan_result.rc == 0 else 'failed' }}"
+    plan_output: "{{ terragrunt_plan_result.stdout | default('') }}"
+    plan_error: "{{ terragrunt_plan_result.stderr | default('') if terragrunt_plan_result.rc != 0 else null }}"
+
+- name: Display plan summary
+  debug:
+    msg:
+      - "Terragrunt plan completed"
+      - "Status: {{ plan_status }}"
+      - "Return code: {{ terragrunt_plan_result.rc }}"
+      - "Plan file: {{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_file }}"
+      - "Working directory: {{ terragrunt_working_dir }}"
+
+- name: Fail if plan failed
+  fail:
+    msg: "Terragrunt plan failed: {{ plan_error }}"
+  when: plan_status == 'failed'

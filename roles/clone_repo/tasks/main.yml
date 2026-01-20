@@ -1,0 +1,48 @@
+---
+# Clone repository role
+# Clones Git repository and checks out specified version
+
+- name: Validate repository URL
+  assert:
+    that:
+      - repo_url is defined
+      - repo_url | length > 0
+    fail_msg: "repo_url must be defined and non-empty"
+    success_msg: "Repository URL validated: {{ repo_url }}"
+
+- name: Build repository URL with credentials if provided
+  set_fact:
+    full_repo_url: >-
+      {% if git_token | length > 0 %}
+      https://{{ git_token }}@github.com/{{ repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') }}
+      {% elif git_username | length > 0 and git_password | length > 0 %}
+      https://{{ git_username }}:{{ git_password }}@github.com/{{ repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') }}
+      {% else %}
+      {{ repo_url if repo_url.startswith('http') else 'https://github.com/' + repo_url }}
+      {% endif %}
+  when: repo_url is defined
+
+- name: Ensure workspace directory exists
+  file:
+    path: "{{ repo_dest }}"
+    state: directory
+    mode: '0755'
+
+- name: Clone repository
+  git:
+    repo: "{{ full_repo_url }}"
+    version: "{{ repo_version }}"
+    dest: "{{ repo_dest }}"
+    update: "{{ git_update }}"
+    force: "{{ git_force }}"
+    depth: "{{ git_depth }}"
+  register: git_clone_result
+
+- name: Display repository information
+  debug:
+    msg:
+      - "Repository cloned successfully"
+      - "URL: {{ repo_url }}"
+      - "Version: {{ repo_version }}"
+      - "Destination: {{ repo_dest }}"
+      - "Current commit: {{ git_clone_result.after | default('unknown') }}"
