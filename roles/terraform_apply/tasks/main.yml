@@ -31,14 +31,27 @@
   when: not plan_file_stat.stat.exists
 
 - name: Check if terraform binary is available
-  command: which {{ terraform_binary }}
+  command: "{{ terraform_binary }} --version"
   register: terraform_binary_check
   changed_when: false
   failed_when: false
+  ignore_errors: yes
 
 - name: Fail if terraform binary not found
   fail:
-    msg: "Terraform binary '{{ terraform_binary }}' not found in PATH"
+    msg: |
+      Terraform binary '{{ terraform_binary }}' not found on the execution node.
+      
+      To fix this issue:
+      1. Install Terraform on the AAP execution node
+      2. Ensure Terraform is in the system PATH
+      3. Or use an execution environment with Terraform pre-installed
+      
+      Installation instructions:
+      - https://developer.hashicorp.com/terraform/downloads
+      - Or use: wget https://releases.hashicorp.com/terraform/VERSION/terraform_VERSION_linux_amd64.zip
+      
+      Current PATH: {{ ansible_env.PATH | default('not set') }}
   when: terraform_binary_check.rc != 0
 
 - name: Build terraform apply command
