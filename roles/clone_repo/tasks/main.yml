@@ -13,12 +13,13 @@
 - name: Build repository URL with credentials if provided
   set_fact:
     full_repo_url: >-
+      {% set clean_repo_url = repo_url | trim %}
       {% if git_token | length > 0 %}
-      https://{{ git_token }}@github.com/{{ repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') }}
+      https://{{ git_token }}@github.com/{{ clean_repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') | trim }}
       {% elif git_username | length > 0 and git_password | length > 0 %}
-      https://{{ git_username }}:{{ git_password }}@github.com/{{ repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') }}
+      https://{{ git_username }}:{{ git_password }}@github.com/{{ clean_repo_url | replace('https://github.com/', '') | replace('git@github.com:', '') | trim }}
       {% else %}
-      {{ repo_url if repo_url.startswith('http') else 'https://github.com/' + repo_url }}
+      {{ clean_repo_url if clean_repo_url.startswith('http') else ('https://github.com/' + clean_repo_url) | trim }}
       {% endif %}
   when: repo_url is defined
 
