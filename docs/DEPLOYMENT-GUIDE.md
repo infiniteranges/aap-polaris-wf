@@ -338,6 +338,13 @@ Ensure your orchestration service has these endpoints:
 
 ## Troubleshooting
 
+### Issue: Role not found (e.g., "the role 'clone_repo' was not found")
+**Solution**: 
+- Ensure `ansible.cfg` exists in the project root with `roles_path = roles`
+- Verify the project structure has `roles/` directory at the root level
+- Sync the project again after adding `ansible.cfg`
+- Verify the playbook path is correct (e.g., `playbooks/terraform.yml`)
+
 ### Issue: Playbook not found
 **Solution**: Ensure project is synced and playbook path is correct
 
