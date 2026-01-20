@@ -29,15 +29,26 @@
     state: directory
     mode: '0755'
 
-- name: Clone repository
+- name: Clone repository (with depth if specified)
   git:
     repo: "{{ full_repo_url | trim }}"
     version: "{{ repo_version | default('HEAD') }}"
     dest: "{{ repo_dest }}"
     update: "{{ git_update | default(true) }}"
     force: "{{ git_force | default(false) }}"
-    depth: "{{ git_depth | default(omit) }}"
+    depth: "{{ git_depth | int }}"
   register: git_clone_result
+  when: git_depth is defined and git_depth | string != '' and (git_depth | int) > 0
+
+- name: Clone repository (without depth)
+  git:
+    repo: "{{ full_repo_url | trim }}"
+    version: "{{ repo_version | default('HEAD') }}"
+    dest: "{{ repo_dest }}"
+    update: "{{ git_update | default(true) }}"
+    force: "{{ git_force | default(false) }}"
+  register: git_clone_result
+  when: git_depth is not defined or git_depth | string == '' or (git_depth | int) <= 0
 
 - name: Display repository information
   debug:
