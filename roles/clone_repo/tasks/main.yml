@@ -31,12 +31,12 @@
 
 - name: Clone repository
   git:
-    repo: "{{ full_repo_url }}"
-    version: "{{ repo_version }}"
+    repo: "{{ full_repo_url | trim }}"
+    version: "{{ repo_version | default('HEAD') }}"
     dest: "{{ repo_dest }}"
-    update: "{{ git_update }}"
-    force: "{{ git_force }}"
-    depth: "{{ git_depth }}"
+    update: "{{ git_update | default(true) }}"
+    force: "{{ git_force | default(false) }}"
+    depth: "{{ git_depth | default(omit) }}"
   register: git_clone_result
 
 - name: Display repository information
