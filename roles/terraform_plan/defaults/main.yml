@@ -20,9 +20,8 @@ terraform_extra_args: []
 terraform_parallelism: null
 
 # Environment variables for Terraform
+# AWS credentials are obtained from the execution node's IAM role or instance profile
+# No need to pass credentials via variables
 terraform_env:
-  AWS_ACCESS_KEY_ID: "{{ aws_access_key_id | default('') }}"
-  AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key | default('') }}"
-  AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
   AWS_REGION: "{{ tfc_variables.aws_region | default(tfc_variables.ali_region) | default('us-east-1') }}"
   TF_LOG: "{{ terraform_log_level | default('INFO') }}"
