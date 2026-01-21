@@ -110,7 +110,7 @@
   set_fact:
     plan_status: "{{ 'success' if terraform_plan_result.rc == 0 else 'failed' }}"
     plan_output: "{{ terraform_plan_result.stdout | default('') }}"
-    plan_error: "{{ terraform_plan_result.stderr | default('') if terraform_plan_result.rc != 0 else null }}"
+    plan_error: "{{ terraform_plan_result.stderr | default('') if terraform_plan_result.rc != 0 else '' }}"
 
 - name: Display plan summary
   debug:
