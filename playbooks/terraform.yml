@@ -110,7 +110,6 @@
       vars:
         workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
         terraform_vars: "{{ tfc_variables | default({}) }}"
-        terraform_binary: "{{ terraform_binary | default('terraform') }}"
       register: plan_result
 
     # ============================================
