@@ -63,39 +63,55 @@
             region = "{{ (tfc_variables.aws_region | default(aws_region) | default('us-east-1')) }}"
           }
 
-          module "iam_role" {
-            source = "./module"
-
+          resource "aws_iam_role" "this" {
             name = "{{ (tfc_variables.role_name | default(role_name)) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
             {% if assume_policy | length > 0 %}
             assume_role_policy = <<-EOF
           {{ assume_policy }}
           EOF
-            {% endif %}
-            {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns, '') %}
-            {% if policy_arns | length > 0 %}
-            managed_policy_arns = [
-              {% if policy_arns is string %}
-              {% set policies = policy_arns.split(',') %}
-              {% for policy in policies %}
-              "{{ policy.strip() }}"{% if not loop.last %},{% endif %}
-              {% endfor %}
-              {% else %}
-              {% for policy in policy_arns %}
-              "{{ policy }}"{% if not loop.last %},{% endif %}
-              {% endfor %}
-              {% endif %}
-            ]
+            {% else %}
+            assume_role_policy = jsonencode({
+              Version = "2012-10-17"
+              Statement = [
+                {
+                  Effect = "Allow"
+                  Principal = {
+                    Service = "ec2.amazonaws.com"
+                  }
+                  Action = "sts:AssumeRole"
+                }
+              ]
+            })
             {% endif %}
           }
 
+          {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns, '') %}
+          {% if policy_arns | length > 0 %}
+          {% if policy_arns is string %}
+          {% set policies = policy_arns.split(',') %}
+          {% for policy in policies %}
+          resource "aws_iam_role_policy_attachment" "managed_{{ loop.index }}" {
+            role       = aws_iam_role.this.name
+            policy_arn = "{{ policy.strip() }}"
+          }
+          {% endfor %}
+          {% else %}
+          {% for policy in policy_arns %}
+          resource "aws_iam_role_policy_attachment" "managed_{{ loop.index }}" {
+            role       = aws_iam_role.this.name
+            policy_arn = "{{ policy }}"
+          }
+          {% endfor %}
+          {% endif %}
+          {% endif %}
+
           output "iam_role_arn" {
-            value = try(module.iam_role.iam_role_arn, null)
+            value = aws_iam_role.this.arn
           }
 
           output "iam_role_name" {
-            value = try(module.iam_role.iam_role_name, null)
+            value = aws_iam_role.this.name
           }
         dest: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
         mode: '0644'
