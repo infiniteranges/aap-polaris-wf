@@ -9,6 +9,7 @@
       - callback_url | length > 0
     fail_msg: "callback_url must be defined and non-empty"
     success_msg: "Callback URL validated: {{ callback_url }}"
+  when: callback_url is defined
 
 - name: Build callback payload
   set_fact:
