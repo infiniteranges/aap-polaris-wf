@@ -107,7 +107,7 @@
   environment: "{{ terraform_env | combine({'PATH': ansible_env.HOME + '/.local/bin:' + ansible_env.PATH}) }}"
   register: terraform_outputs_result
   failed_when: false
-  when: apply_status == 'success'
+  when: apply_status == 'success' or is_already_exists_error | default(false)
 
 - name: Parse Terraform outputs
   set_fact:
