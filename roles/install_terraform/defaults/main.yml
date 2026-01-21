@@ -1,0 +1,5 @@
+---
+# Default variables for install_terraform role
+
+terraform_binary: "terraform"
+terraform_version: "1.6.6"
