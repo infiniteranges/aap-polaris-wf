@@ -119,15 +119,16 @@
     # ============================================
     # Phase 2: Terraform Plan
     # ============================================
+    - name: Filter out AWS credential variables from terraform_vars
+      set_fact:
+        filtered_terraform_vars: "{{ tfc_variables | default({}) | dict2items | rejectattr('key', 'in', ['aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'aws_region']) | items2dict }}"
+
     - name: Execute terraform plan
       include_role:
         name: terraform_plan
       vars:
         workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
-        terraform_vars: "{{ tfc_variables | default({}) }}"
-        aws_access_key_id: "{{ (tfc_variables.aws_access_key_id | default(aws_access_key_id)) | default((extra_vars | default({})).aws_access_key_id | default('')) }}"
-        aws_secret_access_key: "{{ (tfc_variables.aws_secret_access_key | default(aws_secret_access_key)) | default((extra_vars | default({})).aws_secret_access_key | default('')) }}"
-        aws_session_token: "{{ (tfc_variables.aws_session_token | default(aws_session_token)) | default((extra_vars | default({})).aws_session_token | default('')) }}"
+        terraform_vars: "{{ filtered_terraform_vars | default({}) }}"
       register: plan_result
       
     - name: Set plan result facts from role
