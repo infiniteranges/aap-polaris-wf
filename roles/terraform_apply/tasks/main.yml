@@ -89,11 +89,16 @@
   register: terraform_apply_result
   failed_when: false  # We'll check the return code manually
 
-- name: Set apply status based on return code
+- name: Check if error is "already exists" (idempotent case)
   set_fact:
-    apply_status: "{{ 'success' if terraform_apply_result.rc == 0 else 'failed' }}"
+    is_already_exists_error: "{{ terraform_apply_result.stderr is defined and ('EntityAlreadyExists' in terraform_apply_result.stderr or 'already exists' in terraform_apply_result.stderr | lower) }}"
+  when: terraform_apply_result.rc != 0
+
+- name: Set apply status based on return code (handle already exists as success)
+  set_fact:
+    apply_status: "{{ 'success' if (terraform_apply_result.rc == 0 or (terraform_apply_result.rc != 0 and is_already_exists_error | default(false))) else 'failed' }}"
     apply_output: "{{ terraform_apply_result.stdout | default('') }}"
-    apply_error: "{{ terraform_apply_result.stderr | default('') if terraform_apply_result.rc != 0 else '' }}"
+    apply_error: "{{ terraform_apply_result.stderr | default('') if (terraform_apply_result.rc != 0 and not (is_already_exists_error | default(false))) else '' }}"
 
 - name: Get Terraform outputs
   command: "{{ terraform_binary_path | default(terraform_binary) }} output -json"
@@ -126,6 +131,12 @@
       - "Status: {{ apply_status }}"
       - "Return code: {{ terraform_apply_result.rc }}"
       - "Outputs captured: {{ terraform_outputs is defined }}"
+      - "Already exists (idempotent): {{ is_already_exists_error | default(false) }}"
+
+- name: Warn if resource already exists (treated as success)
+  debug:
+    msg: "Resource already exists - treating as success (idempotent operation)"
+  when: is_already_exists_error | default(false)
 
 - name: Fail if apply failed
   fail:
