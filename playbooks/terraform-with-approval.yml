@@ -54,27 +54,29 @@
           }
 
           provider "aws" {
-            region = "{{ tfc_variables.aws_region | default('us-east-1') }}"
+            region = "{{ (tfc_variables.aws_region | default(aws_region) | default('us-east-1')) }}"
           }
 
           module "iam_role" {
             source = "."
 
-            name = "{{ tfc_variables.role_name }}"
-            {% if tfc_variables.assume_role_policy is defined and tfc_variables.assume_role_policy | length > 0 %}
+            name = "{{ (tfc_variables.role_name | default(role_name)) }}"
+            {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
+            {% if assume_policy | length > 0 %}
             assume_role_policy = <<-EOF
-          {{ tfc_variables.assume_role_policy }}
+          {{ assume_policy }}
           EOF
             {% endif %}
-            {% if tfc_variables.managed_policy_arns is defined and tfc_variables.managed_policy_arns | length > 0 %}
+            {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns, '') %}
+            {% if policy_arns | length > 0 %}
             managed_policy_arns = [
-              {% if tfc_variables.managed_policy_arns is string %}
-              {% set policies = tfc_variables.managed_policy_arns.split(',') %}
+              {% if policy_arns is string %}
+              {% set policies = policy_arns.split(',') %}
               {% for policy in policies %}
               "{{ policy.strip() }}"{% if not loop.last %},{% endif %}
               {% endfor %}
               {% else %}
-              {% for policy in tfc_variables.managed_policy_arns %}
+              {% for policy in policy_arns %}
               "{{ policy }}"{% if not loop.last %},{% endif %}
               {% endfor %}
               {% endif %}
