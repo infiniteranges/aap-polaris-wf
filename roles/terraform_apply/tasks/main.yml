@@ -43,7 +43,7 @@
       Terraform binary '{{ terraform_binary }}' not found on the execution node.
       
       To fix this issue:
-      1. Install Terraform on the AAP execution node
+      1. Install Terraform on the execution node
       2. Ensure Terraform is in the system PATH
       3. Or use an execution environment with Terraform pre-installed
       
