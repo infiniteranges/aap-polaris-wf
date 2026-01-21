@@ -147,7 +147,6 @@
         callback_plan_output: "{{ plan_output | default('') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
-        callback_url: "{{ callback_url | default('') }}"
       when: 
         - plan_status == 'success'
         - callback_url is defined and callback_url | length > 0
@@ -166,7 +165,6 @@
         callback_error: "{{ plan_error | default('Plan execution failed') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
-        callback_url: "{{ callback_url | default('') }}"
       when: 
         - plan_status == 'failed'
         - callback_url is defined and callback_url | length > 0
@@ -213,7 +211,6 @@
         callback_error: "{{ apply_result.apply_error | default('Apply execution failed') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
-        callback_url: "{{ callback_url | default('') }}"
       when:
         - plan_status == 'success'
         - apply_result.apply_status == 'failed'

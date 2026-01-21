@@ -93,7 +93,7 @@
   set_fact:
     apply_status: "{{ 'success' if terraform_apply_result.rc == 0 else 'failed' }}"
     apply_output: "{{ terraform_apply_result.stdout | default('') }}"
-    apply_error: "{{ terraform_apply_result.stderr | default('') if terraform_apply_result.rc != 0 else null }}"
+    apply_error: "{{ terraform_apply_result.stderr | default('') if terraform_apply_result.rc != 0 else '' }}"
 
 - name: Get Terraform outputs
   command: "{{ terraform_binary_path | default(terraform_binary) }} output -json"
