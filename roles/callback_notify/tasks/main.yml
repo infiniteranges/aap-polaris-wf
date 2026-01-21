@@ -20,10 +20,11 @@
       phase: "{{ callback_phase | default('unknown') }}"
       status: "{{ callback_status | default('unknown') }}"
       outputs: "{{ callback_outputs | default({}) }}"
-      error: "{{ callback_error | default(null) }}"
-      planOutput: "{{ callback_plan_output | default(null) }}"
-      terraformRunId: "{{ terraform_run_id | default(null) }}"
+      error: "{{ callback_error | default('') }}"
+      planOutput: "{{ callback_plan_output | default('') }}"
+      terraformRunId: "{{ terraform_run_id | default('') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
+  when: callback_url is defined and callback_url | length > 0
 
 - name: Send callback to orchestration service
   uri:
