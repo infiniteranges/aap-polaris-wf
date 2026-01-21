@@ -30,17 +30,29 @@
     msg: "Plan file does not exist: {{ workspace_path }}/{{ plan_file }}. Run terraform plan first."
   when: not plan_file_stat.stat.exists
 
-- name: Check if terraform binary is available
-  command: "{{ terraform_binary }} --version"
+- name: Check if terraform binary is available (try system first, then local bin)
+  shell: |
+    if command -v terraform >/dev/null 2>&1; then
+      terraform --version
+    elif [ -f "$HOME/.local/bin/terraform" ]; then
+      $HOME/.local/bin/terraform --version
+    else
+      exit 1
+    fi
   register: terraform_binary_check
   changed_when: false
   failed_when: false
   ignore_errors: yes
 
+- name: Determine terraform binary path
+  set_fact:
+    terraform_binary_path: "{{ 'terraform' if terraform_binary_check.rc == 0 else (ansible_env.HOME + '/.local/bin/terraform') }}"
+  when: terraform_binary_check.rc is defined
+
 - name: Fail if terraform binary not found
   fail:
     msg: |
-      Terraform binary '{{ terraform_binary }}' not found on the execution node.
+      Terraform binary not found on the execution node.
       
       To fix this issue:
       1. Install Terraform on the execution node
@@ -57,7 +69,7 @@
 - name: Build terraform apply command
   set_fact:
     terraform_apply_cmd: >-
-      {{ terraform_binary }} apply
+      {{ terraform_binary_path | default(terraform_binary) }} apply
       {% if terraform_auto_approve %}
       -auto-approve
       {% endif %}
@@ -73,7 +85,7 @@
   command: "{{ terraform_apply_cmd }}"
   args:
     chdir: "{{ workspace_path }}"
-  environment: "{{ terraform_env }}"
+  environment: "{{ terraform_env | combine({'PATH': ansible_env.HOME + '/.local/bin:' + ansible_env.PATH}) }}"
   register: terraform_apply_result
   failed_when: false  # We'll check the return code manually
 
@@ -84,10 +96,10 @@
     apply_error: "{{ terraform_apply_result.stderr | default('') if terraform_apply_result.rc != 0 else null }}"
 
 - name: Get Terraform outputs
-  command: "{{ terraform_binary }} output -json"
+  command: "{{ terraform_binary_path | default(terraform_binary) }} output -json"
   args:
     chdir: "{{ workspace_path }}"
-  environment: "{{ terraform_env }}"
+  environment: "{{ terraform_env | combine({'PATH': ansible_env.HOME + '/.local/bin:' + ansible_env.PATH}) }}"
   register: terraform_outputs_result
   failed_when: false
   when: apply_status == 'success'

@@ -14,19 +14,37 @@
     os_family: "{{ ansible_os_family | lower }}"
   when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
-- name: Install dependencies (RedHat/CentOS)
+- name: Check if unzip is available
+  command: "which unzip"
+  register: unzip_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Check if wget is available
+  command: "which wget"
+  register: wget_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Try to install dependencies (RedHat/CentOS) without sudo
   yum:
     name:
       - unzip
       - wget
     state: present
   become: yes
+  failed_when: false
   when:
     - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
     - os_family == "redhat"
+    - (unzip_check.rc != 0 or wget_check.rc != 0)
 
-- name: Install dependencies (Debian/Ubuntu)
+- name: Try to install dependencies (Debian/Ubuntu) without sudo
   apt:
     name:
       - unzip
@@ -34,10 +52,20 @@
     state: present
     update_cache: yes
   become: yes
+  failed_when: false
   when:
     - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
     - os_family == "debian"
+    - (unzip_check.rc != 0 or wget_check.rc != 0)
+
+- name: Warn if dependencies are missing
+  debug:
+    msg: "Warning: unzip or wget may not be available. Installation may fail."
+  when:
+    - terraform_binary_check.rc is defined
+    - terraform_binary_check.rc != 0
+    - (unzip_check.rc != 0 or wget_check.rc != 0)
 
 - name: Download Terraform
   get_url:
@@ -53,30 +81,60 @@
     remote_src: yes
   when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
-- name: Install Terraform to /usr/local/bin
+- name: Create local bin directory
+  file:
+    path: "{{ ansible_env.HOME }}/.local/bin"
+    state: directory
+    mode: '0755'
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Install Terraform to user local bin
   copy:
     src: "/tmp/terraform"
-    dest: "/usr/local/bin/terraform"
+    dest: "{{ ansible_env.HOME }}/.local/bin/terraform"
     mode: '0755'
     remote_src: yes
-  become: yes
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Add local bin to PATH for current session
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+    create: yes
+    state: present
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Set PATH environment variable
+  set_fact:
+    terraform_path: "{{ ansible_env.HOME }}/.local/bin"
   when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Clean up temporary files
   file:
     path: "{{ item }}"
     state: absent
-  become: yes
   loop:
     - "/tmp/terraform_1.6.6_linux_amd64.zip"
     - "/tmp/terraform"
   when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Verify Terraform installation
-  command: "terraform --version"
+  command: "{{ ansible_env.HOME }}/.local/bin/terraform --version"
   register: terraform_verify
   changed_when: false
+  environment:
+    PATH: "{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}"
   when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
+
+- name: Set terraform binary path fact for other roles
+  set_fact:
+    terraform_binary: "{{ ansible_env.HOME }}/.local/bin/terraform"
+    terraform_path_updated: "{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}"
+  when:
+    - terraform_binary_check.rc is defined
+    - terraform_binary_check.rc != 0
+    - terraform_verify.rc is defined
+    - terraform_verify.rc == 0
 
 - name: Display Terraform version
   debug:
