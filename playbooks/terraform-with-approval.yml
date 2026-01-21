@@ -38,6 +38,62 @@
         name: install_terraform
 
     # ============================================
+    # Phase 1.6: Create Terraform Configuration
+    # ============================================
+    - name: Create main.tf configuration file
+      copy:
+        content: |
+          terraform {
+            required_version = ">= 1.0"
+            required_providers {
+              aws = {
+                source  = "hashicorp/aws"
+                version = "~> 5.0"
+              }
+            }
+          }
+
+          provider "aws" {
+            region = "{{ tfc_variables.aws_region | default('us-east-1') }}"
+          }
+
+          module "iam_role" {
+            source = "."
+
+            name = "{{ tfc_variables.role_name }}"
+            {% if tfc_variables.assume_role_policy is defined and tfc_variables.assume_role_policy | length > 0 %}
+            assume_role_policy = <<-EOF
+          {{ tfc_variables.assume_role_policy }}
+          EOF
+            {% endif %}
+            {% if tfc_variables.managed_policy_arns is defined and tfc_variables.managed_policy_arns | length > 0 %}
+            managed_policy_arns = [
+              {% if tfc_variables.managed_policy_arns is string %}
+              {% set policies = tfc_variables.managed_policy_arns.split(',') %}
+              {% for policy in policies %}
+              "{{ policy.strip() }}"{% if not loop.last %},{% endif %}
+              {% endfor %}
+              {% else %}
+              {% for policy in tfc_variables.managed_policy_arns %}
+              "{{ policy }}"{% if not loop.last %},{% endif %}
+              {% endfor %}
+              {% endif %}
+            ]
+            {% endif %}
+          }
+
+          output "iam_role_arn" {
+            value = try(module.iam_role.iam_role_arn, null)
+          }
+
+          output "iam_role_name" {
+            value = try(module.iam_role.iam_role_name, null)
+          }
+        dest: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
+        mode: '0644'
+      when: tfc_pattern_repo_name is defined
+
+    # ============================================
     # Phase 2: Terraform Plan
     # ============================================
     - name: Execute terraform plan
