@@ -22,13 +22,13 @@
     # ============================================
     # Phase 1: Clone Repository
     # ============================================
-    - name: Clone repository
+    - name: Clone repository to module subdirectory
       include_role:
         name: clone_repo
       vars:
         repo_url: "{{ tfc_pattern_repo_name }}"
         repo_version: "{{ tfc_pattern_version }}"
-        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}/module"
 
     # ============================================
     # Phase 1.5: Install Terraform (if not present)
@@ -58,7 +58,7 @@
           }
 
           module "iam_role" {
-            source = "./"
+            source = "./module"
 
             name = "{{ (tfc_variables.role_name | default(role_name)) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
