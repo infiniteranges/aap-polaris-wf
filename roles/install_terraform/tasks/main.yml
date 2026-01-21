@@ -2,22 +2,22 @@
 # Install Terraform role
 # Automatically installs Terraform if not found on the execution node
 
+- name: Set default terraform binary name
+  set_fact:
+    tf_binary: "{{ terraform_binary | default('terraform') }}"
+    tf_version: "{{ terraform_version | default('1.6.6') }}"
+
 - name: Check if terraform binary is available
-  command: "{{ terraform_binary | default('terraform') }} --version"
+  command: "terraform --version"
   register: terraform_binary_check
   changed_when: false
   failed_when: false
   ignore_errors: yes
 
-- name: Set terraform version
-  set_fact:
-    terraform_version: "{{ terraform_version | default('1.6.6') }}"
-  when: terraform_binary_check.rc != 0
-
 - name: Detect OS family
   set_fact:
     os_family: "{{ ansible_os_family | lower }}"
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Install dependencies (RedHat/CentOS)
   yum:
@@ -27,6 +27,7 @@
     state: present
   become: yes
   when:
+    - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
     - os_family == "redhat"
 
@@ -39,22 +40,23 @@
     update_cache: yes
   become: yes
   when:
+    - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
     - os_family == "debian"
 
 - name: Download Terraform
   get_url:
-    url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
-    dest: "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
+    url: "https://releases.hashicorp.com/terraform/{{ tf_version }}/terraform_{{ tf_version }}_linux_amd64.zip"
+    dest: "/tmp/terraform_{{ tf_version }}_linux_amd64.zip"
     mode: '0644'
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Unzip Terraform
   unarchive:
-    src: "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
+    src: "/tmp/terraform_{{ tf_version }}_linux_amd64.zip"
     dest: "/tmp"
     remote_src: yes
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Install Terraform to /usr/local/bin
   copy:
@@ -63,7 +65,7 @@
     mode: '0755'
     remote_src: yes
   become: yes
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Clean up temporary files
   file:
@@ -71,31 +73,35 @@
     state: absent
   become: yes
   loop:
-    - "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
+    - "/tmp/terraform_{{ tf_version }}_linux_amd64.zip"
     - "/tmp/terraform"
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Verify Terraform installation
-  command: "{{ terraform_binary | default('terraform') }} --version"
+  command: "terraform --version"
   register: terraform_verify
   changed_when: false
-  when: terraform_binary_check.rc != 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc != 0
 
 - name: Display Terraform version
   debug:
     msg: "Terraform installed successfully: {{ terraform_verify.stdout_lines[0] | default('unknown') }}"
   when:
+    - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
+    - terraform_verify.rc is defined
     - terraform_verify.rc == 0
 
 - name: Fail if Terraform installation failed
   fail:
     msg: "Failed to install Terraform. Please install manually or use an execution environment with Terraform pre-installed."
   when:
+    - terraform_binary_check.rc is defined
     - terraform_binary_check.rc != 0
+    - terraform_verify.rc is defined
     - terraform_verify.rc != 0
 
 - name: Display Terraform already installed
   debug:
     msg: "Terraform already installed: {{ terraform_binary_check.stdout_lines[0] | default('unknown') }}"
-  when: terraform_binary_check.rc == 0
+  when: terraform_binary_check.rc is defined and terraform_binary_check.rc == 0
