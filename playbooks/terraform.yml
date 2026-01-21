@@ -127,6 +127,12 @@
         workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
         terraform_vars: "{{ tfc_variables | default({}) }}"
       register: plan_result
+      
+    - name: Set plan result facts from role
+      set_fact:
+        plan_status: "{{ plan_status | default('unknown') }}"
+        plan_output: "{{ plan_output | default('') }}"
+        plan_error: "{{ plan_error | default('') }}"
 
     # ============================================
     # Phase 3: Send Plan Success Callback
@@ -138,10 +144,10 @@
         callback_phase: "plan"
         callback_status: "success"
         callback_endpoint: "plan_success"
-        callback_plan_output: "{{ plan_result.plan_output | default('') }}"
+        callback_plan_output: "{{ plan_output | default('') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
-      when: plan_result.plan_status == 'success'
+      when: plan_status == 'success'
 
     # ============================================
     # Phase 4: Send Plan Failed Callback
@@ -153,10 +159,10 @@
         callback_phase: "plan"
         callback_status: "failed"
         callback_endpoint: "plan_failed"
-        callback_error: "{{ plan_result.plan_error | default('Plan execution failed') }}"
+        callback_error: "{{ plan_error | default('Plan execution failed') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
-      when: plan_result.plan_status == 'failed'
+      when: plan_status == 'failed'
       ignore_errors: yes
 
     # ============================================
@@ -168,7 +174,7 @@
       vars:
         workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
       register: apply_result
-      when: plan_result.plan_status == 'success'
+      when: plan_status == 'success'
 
     # ============================================
     # Phase 6: Send Apply Success Callback
@@ -184,7 +190,7 @@
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
       when:
-        - plan_result.plan_status == 'success'
+        - plan_status == 'success'
         - apply_result.apply_status == 'success'
 
     # ============================================
@@ -201,7 +207,7 @@
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
       when:
-        - plan_result.plan_status == 'success'
+        - plan_status == 'success'
         - apply_result.apply_status == 'failed'
       ignore_errors: yes
 
@@ -212,6 +218,6 @@
       debug:
         msg:
           - "=== Terraform Execution Complete ==="
-          - "Plan Status: {{ plan_result.plan_status | default('unknown') }}"
+          - "Plan Status: {{ plan_status | default('unknown') }}"
           - "Apply Status: {{ apply_result.apply_status | default('skipped') }}"
           - "Workspace: {{ tfc_workspace_name }}"
