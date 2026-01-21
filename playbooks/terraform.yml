@@ -67,9 +67,10 @@
             name = "{{ (tfc_variables.role_name | default(role_name)) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
             {% if assume_policy | length > 0 %}
-            assume_role_policy = <<-EOF
+            assume_role_policy = jsonencode(jsondecode(<<-EOF
           {{ assume_policy }}
           EOF
+            ))
             {% else %}
             assume_role_policy = jsonencode({
               Version = "2012-10-17"
