@@ -58,7 +58,7 @@
           }
 
           module "iam_role" {
-            source = "."
+            source = "./"
 
             name = "{{ (tfc_variables.role_name | default(role_name)) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
