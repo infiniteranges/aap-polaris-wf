@@ -191,12 +191,12 @@
         callback_phase: "apply"
         callback_status: "success"
         callback_endpoint: "apply_success"
-        callback_outputs: "{{ apply_result.terraform_outputs | default({}) }}"
+        callback_outputs: "{{ terraform_outputs | default({}) }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
       when:
         - plan_status == 'success'
-        - apply_result.apply_status == 'success'
+        - apply_status == 'success'
 
     # ============================================
     # Phase 7: Send Apply Failed Callback
@@ -208,12 +208,12 @@
         callback_phase: "apply"
         callback_status: "failed"
         callback_endpoint: "apply_failed"
-        callback_error: "{{ apply_result.apply_error | default('Apply execution failed') }}"
+        callback_error: "{{ apply_error | default('Apply execution failed') }}"
         deployment_id: "{{ tfc_workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
       when:
         - plan_status == 'success'
-        - apply_result.apply_status == 'failed'
+        - apply_status == 'failed'
         - callback_url is defined and callback_url | length > 0
       ignore_errors: yes
 
@@ -225,5 +225,5 @@
         msg:
           - "=== Terraform Execution Complete ==="
           - "Plan Status: {{ plan_status | default('unknown') }}"
-          - "Apply Status: {{ apply_result.apply_status | default('skipped') }}"
+          - "Apply Status: {{ apply_status | default('skipped') }}"
           - "Workspace: {{ tfc_workspace_name }}"
