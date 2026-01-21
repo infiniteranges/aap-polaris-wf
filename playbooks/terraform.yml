@@ -181,9 +181,6 @@
         name: terraform_apply
       vars:
         workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
-        aws_access_key_id: "{{ (tfc_variables.aws_access_key_id | default(aws_access_key_id)) | default((extra_vars | default({})).aws_access_key_id | default('')) }}"
-        aws_secret_access_key: "{{ (tfc_variables.aws_secret_access_key | default(aws_secret_access_key)) | default((extra_vars | default({})).aws_secret_access_key | default('')) }}"
-        aws_session_token: "{{ (tfc_variables.aws_session_token | default(aws_session_token)) | default((extra_vars | default({})).aws_session_token | default('')) }}"
       register: apply_result
       when: plan_status == 'success'
 
