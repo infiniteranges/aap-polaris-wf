@@ -41,18 +41,20 @@
 
 - name: Verify plan file exists after plan execution
   stat:
-    path: "{{ workspace_path }}/tfplan"
+    path: "{{ workspace_path }}/{{ plan_file | default('tfplan') }}"
   register: plan_file_stat_after
   when: not plan_file_stat.stat.exists
 
-- name: Fail if plan file still does not exist after attempting to create it
-  fail:
-    msg: "Plan file does not exist: {{ workspace_path }}/tfplan. Attempted to run terraform plan but file still missing. This indicates a filesystem or permissions issue."
+- name: Update plan_file_stat if plan was just created
+  set_fact:
+    plan_file_stat: "{{ plan_file_stat_after }}"
   when: 
     - not plan_file_stat.stat.exists
-    - not (plan_file_stat_after.stat.exists | default(false))
+    - plan_file_stat_after.stat.exists | default(false)
+
+- name: Fail if plan file still does not exist after attempting to create it
   fail:
-    msg: "Plan file does not exist: {{ workspace_path }}/{{ plan_file }}. Run terraform plan first."
+    msg: "Plan file does not exist: {{ workspace_path }}/{{ plan_file | default('tfplan') }}. Attempted to run terraform plan but file still missing. This indicates a filesystem or permissions issue."
   when: not plan_file_stat.stat.exists
 
 - name: Check if terraform binary is available (try system first, then local bin)
