@@ -1,0 +1,46 @@
+---
+# Terraform Plan Callback Playbook
+# Sends callback after plan completes (used in approval workflows)
+
+- name: Send Terraform Plan Callback
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    # ============================================
+    # Load plan status from previous step
+    # ============================================
+    - name: Load plan status from JSON file
+      slurp:
+        src: "/tmp/workspaces/{{ tfc_workspace_name }}/.plan_status.json"
+      register: plan_status_file
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if plan status file not found
+      fail:
+        msg: "Plan status file not found. Ensure terraform-plan step completed successfully."
+      when: plan_status_file.content is not defined or plan_status_file.content | length == 0
+
+    - name: Parse plan status and output from JSON
+      set_fact:
+        plan_status: "{{ (plan_status_file.content | b64decode | from_json).plan_status | default('unknown') }}"
+        plan_output: "{{ (plan_status_file.content | b64decode | from_json).plan_output | default('') }}"
+      when: plan_status_file.content is defined
+    # ============================================
+    # Send Waiting for Approval Callback
+    # ============================================
+    - name: Send waiting for approval callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "waiting_approval"
+        callback_endpoint: "plan_success"  # Use plan_success endpoint, status indicates waiting
+        callback_plan_output: "{{ plan_output | default('') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: 
+        - plan_status == 'success'
+        - callback_url is defined and callback_url | length > 0
+      ignore_errors: yes

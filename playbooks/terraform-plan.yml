@@ -1,0 +1,88 @@
+---
+# Terraform Plan Playbook
+# Executes terraform plan and sends callbacks
+
+- name: Execute Terraform Plan
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    callback_phase: "plan"
+    callback_status: "success"
+    callback_endpoint: "plan_success"
+  
+  tasks:
+    - name: Filter out AWS credential variables from terraform_vars
+      set_fact:
+        filtered_terraform_vars: "{{ tfc_variables | default({}) | dict2items | rejectattr('key', 'in', ['aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'aws_region']) | items2dict }}"
+
+    - name: Execute terraform plan
+      include_role:
+        name: terraform_plan
+      vars:
+        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        terraform_vars: "{{ filtered_terraform_vars | default({}) }}"
+      register: plan_result
+      
+    - name: Set plan result facts from role
+      set_fact:
+        plan_status: "{{ plan_result.plan_status | default('unknown') }}"
+        plan_output: "{{ plan_result.plan_output | default('') }}"
+        plan_error: "{{ plan_result.plan_error | default('') }}"
+
+    # ============================================
+    # Send Plan Success Callback
+    # ============================================
+    - name: Send plan success callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "success"
+        callback_endpoint: "plan_success"
+        callback_plan_output: "{{ plan_output | default('') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: 
+        - plan_status == 'success'
+        - callback_url is defined and callback_url | length > 0
+      ignore_errors: yes
+
+    # ============================================
+    # Send Plan Failed Callback
+    # ============================================
+    - name: Send plan failed callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "plan"
+        callback_status: "failed"
+        callback_endpoint: "plan_failed"
+        callback_error: "{{ plan_error | default('Plan execution failed') }}"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when: 
+        - plan_status == 'failed'
+        - callback_url is defined and callback_url | length > 0
+      ignore_errors: yes
+
+    # ============================================
+    # Save plan status for subsequent workflow nodes
+    # ============================================
+    - name: Save plan status to JSON file for workflow variables
+      copy:
+        content: |
+          {
+            "plan_status": "{{ plan_status | default('unknown') }}",
+            "plan_output": {{ plan_output | default('') | to_json }},
+            "plan_error": {{ plan_error | default('') | to_json }}
+          }
+        dest: "/tmp/workspaces/{{ tfc_workspace_name }}/.plan_status.json"
+        mode: '0644'
+      when: plan_status is defined
+
+    - name: Display plan summary
+      debug:
+        msg:
+          - "Terraform plan completed"
+          - "Status: {{ plan_status | default('unknown') }}"
+          - "Workspace: {{ tfc_workspace_name }}"

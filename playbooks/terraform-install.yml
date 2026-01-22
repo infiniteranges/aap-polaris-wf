@@ -1,0 +1,12 @@
+---
+# Terraform Installation Playbook
+# Installs Terraform if not already present
+
+- name: Install Terraform
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Install Terraform if not present
+      include_role:
+        name: install_terraform

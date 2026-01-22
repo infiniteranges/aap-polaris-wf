@@ -1,0 +1,78 @@
+---
+# Terraform Create Configuration Playbook
+# Creates the main.tf configuration file that uses the cloned module
+
+- name: Create Terraform Configuration
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Create main.tf configuration file
+      copy:
+        content: |
+          terraform {
+            required_version = ">= 1.0"
+            required_providers {
+              aws = {
+                source  = "hashicorp/aws"
+                version = "~> 5.0"
+              }
+            }
+          }
+
+          provider "aws" {
+            region = "{{ (tfc_variables.aws_region | default(aws_region) | default('us-east-1')) }}"
+          }
+
+          resource "aws_iam_role" "this" {
+            name = "{{ (tfc_variables.role_name | default(role_name)) }}"
+            {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
+            {% if assume_policy | length > 0 %}
+            {% set escaped_policy = assume_policy | replace('\n', '\\n') | replace('\r', '') | replace('"', '\\"') %}
+            assume_role_policy = jsonencode(jsondecode("{{ escaped_policy }}"))
+            {% else %}
+            assume_role_policy = jsonencode({
+              Version = "2012-10-17"
+              Statement = [
+                {
+                  Effect = "Allow"
+                  Principal = {
+                    Service = "ec2.amazonaws.com"
+                  }
+                  Action = "sts:AssumeRole"
+                }
+              ]
+            })
+            {% endif %}
+          }
+
+          {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns, '') %}
+          {% if policy_arns | length > 0 %}
+          {% if policy_arns is string %}
+          {% set policies = policy_arns.split(',') %}
+          {% for policy in policies %}
+          resource "aws_iam_role_policy_attachment" "managed_{{ loop.index }}" {
+            role       = aws_iam_role.this.name
+            policy_arn = "{{ policy.strip() }}"
+          }
+          {% endfor %}
+          {% else %}
+          {% for policy in policy_arns %}
+          resource "aws_iam_role_policy_attachment" "managed_{{ loop.index }}" {
+            role       = aws_iam_role.this.name
+            policy_arn = "{{ policy }}"
+          }
+          {% endfor %}
+          {% endif %}
+          {% endif %}
+
+          output "iam_role_arn" {
+            value = aws_iam_role.this.arn
+          }
+
+          output "iam_role_name" {
+            value = aws_iam_role.this.name
+          }
+        dest: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
+        mode: '0644'
+      when: tfc_pattern_repo_name is defined

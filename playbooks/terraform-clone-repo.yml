@@ -1,0 +1,25 @@
+---
+# Terraform Clone Repository Playbook
+# Clones the Terraform module repository to the workspace
+
+- name: Clone Terraform Repository
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform Repository Clone Started ==="
+          - "Repository: {{ tfc_pattern_repo_name }}"
+          - "Version: {{ tfc_pattern_version }}"
+          - "Workspace: {{ tfc_workspace_name }}"
+          - "Cloud Provider: {{ tfc_cloud_provider }}"
+
+    - name: Clone repository to module subdirectory
+      include_role:
+        name: clone_repo
+      vars:
+        repo_url: "{{ tfc_pattern_repo_name }}"
+        repo_version: "{{ tfc_pattern_version }}"
+        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}/module"

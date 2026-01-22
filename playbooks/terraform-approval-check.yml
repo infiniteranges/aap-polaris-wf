@@ -1,0 +1,47 @@
+---
+# Terraform Approval Check Playbook
+# Validates approval decision after approval node completes
+
+- name: Validate Approval Decision
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Validate approval decision
+      include_role:
+        name: approval_wait
+
+    # ============================================
+    # Send Approval Granted Callback
+    # ============================================
+    - name: Send approval granted callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "success"
+        callback_endpoint: "approval_granted"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - ansible_awx_workflow_approval_status | default('') == 'approved'
+        - callback_url is defined and callback_url | length > 0
+      ignore_errors: yes
+
+    # ============================================
+    # Send Approval Denied Callback
+    # ============================================
+    - name: Send approval denied callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_phase: "approval"
+        callback_status: "failed"
+        callback_endpoint: "approval_denied"
+        callback_error: "Workflow approval was denied"
+        deployment_id: "{{ tfc_workspace_name }}"
+        execution_id: "{{ ansible_date_time.epoch }}"
+      when:
+        - ansible_awx_workflow_approval_status | default('') == 'denied'
+        - callback_url is defined and callback_url | length > 0
+      ignore_errors: yes
