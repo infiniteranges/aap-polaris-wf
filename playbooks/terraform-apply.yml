@@ -66,6 +66,13 @@
         name: install_terraform
       when: workspace_name is defined and workspace_name | length > 0
     
+    - name: Ensure workspace directory exists
+      file:
+        path: "{{ workspace_path }}"
+        state: directory
+        mode: '0755'
+      when: workspace_name is defined and workspace_name | length > 0
+
     - name: Check if main.tf exists before apply
       stat:
         path: "{{ workspace_path }}/main.tf"
