@@ -25,7 +25,32 @@
     path: "{{ workspace_path }}/{{ plan_file }}"
   register: plan_file_stat
 
-- name: Fail if plan file does not exist
+- name: Check if plan file exists
+  stat:
+    path: "{{ workspace_path }}/tfplan"
+  register: plan_file_stat
+
+- name: Run terraform plan if plan file doesn't exist (fallback for workflow isolation)
+  include_role:
+    name: terraform_plan
+  vars:
+    workspace_path: "{{ workspace_path }}"
+    terraform_vars: "{{ terraform_vars | default({}) }}"
+  register: plan_result
+  when: not plan_file_stat.stat.exists
+
+- name: Verify plan file exists after plan execution
+  stat:
+    path: "{{ workspace_path }}/tfplan"
+  register: plan_file_stat_after
+  when: not plan_file_stat.stat.exists
+
+- name: Fail if plan file still does not exist after attempting to create it
+  fail:
+    msg: "Plan file does not exist: {{ workspace_path }}/tfplan. Attempted to run terraform plan but file still missing. This indicates a filesystem or permissions issue."
+  when: 
+    - not plan_file_stat.stat.exists
+    - not (plan_file_stat_after.stat.exists | default(false))
   fail:
     msg: "Plan file does not exist: {{ workspace_path }}/{{ plan_file }}. Run terraform plan first."
   when: not plan_file_stat.stat.exists
