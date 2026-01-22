@@ -29,11 +29,12 @@
         body_format: json
         body:
           callbackType: "apply_success"
-        status_code: [200, 201]
+        status_code: [200, 201, 404]
       register: callback_result
       failed_when: false
       changed_when: false
-      when: apply_status == 'success'
+      ignore_errors: yes
+      when: apply_status == 'success' or apply_status == 'unknown'
     
     - name: Display callback result
       debug:
