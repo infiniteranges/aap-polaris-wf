@@ -72,8 +72,23 @@
             name = "{{ (tfc_variables.role_name | default(role_name)) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
             {% if assume_policy | length > 0 %}
+            {% if assume_policy.startswith('{') or assume_policy.startswith('[') %}
             {% set escaped_policy = assume_policy | replace('\n', '\\n') | replace('\r', '') | replace('"', '\\"') %}
             assume_role_policy = jsonencode(jsondecode("{{ escaped_policy }}"))
+            {% else %}
+            assume_role_policy = jsonencode({
+              Version = "2012-10-17"
+              Statement = [
+                {
+                  Effect = "Allow"
+                  Principal = {
+                    Service = "{{ assume_policy }}.amazonaws.com"
+                  }
+                  Action = "sts:AssumeRole"
+                }
+              ]
+            })
+            {% endif %}
             {% else %}
             assume_role_policy = jsonencode({
               Version = "2012-10-17"
