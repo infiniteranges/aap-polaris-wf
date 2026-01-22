@@ -32,6 +32,15 @@
       fail:
         msg: "Cannot apply - plan status was not successful. Status: {{ plan_status | default('unknown') }}"
       when: plan_status | default('unknown') != 'success'
+    
+    # ============================================
+    # Phase 0.5: Install Terraform (if not present)
+    # ============================================
+    - name: Install Terraform if not present
+      include_role:
+        name: install_terraform
+      when: tfc_workspace_name is defined
+    
     - name: Execute terraform apply
       include_role:
         name: terraform_apply

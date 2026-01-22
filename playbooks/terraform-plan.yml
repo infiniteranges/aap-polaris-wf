@@ -18,6 +18,14 @@
         mode: '0755'
       when: tfc_workspace_name is defined
 
+    # ============================================
+    # Phase 0.5: Install Terraform (if not present)
+    # ============================================
+    - name: Install Terraform if not present
+      include_role:
+        name: install_terraform
+      when: tfc_workspace_name is defined
+
     - name: Filter out AWS credential variables from terraform_vars
       set_fact:
         filtered_terraform_vars: "{{ tfc_variables | default({}) | dict2items | rejectattr('key', 'in', ['aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'aws_region']) | items2dict }}"
