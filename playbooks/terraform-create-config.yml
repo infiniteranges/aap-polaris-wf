@@ -14,9 +14,9 @@
       set_fact:
         workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default('') }}"
     
-    - name: Generate workspace name from variables if not set (use workflow job ID for consistency)
+    - name: Generate workspace name from variables if not set (deterministic hash)
       set_fact:
-        workspace_name: "{{ 'terraform-' + (role_name | default(resource_name | default('resource')) | default('deployment')) + '-' + (aws_region | default(region | default('us-east-1'))) + '-' + (ansible_workflow_job_id | default(ansible_job_id | default(ansible_date_time.epoch)) | string) }}"
+        workspace_name: "{{ 'terraform-' + (role_name | default(resource_name | default('resource')) | default('deployment')) + '-' + (aws_region | default(region | default('us-east-1'))) + '-' + ((role_name | default(resource_name | default('')) | default('') + aws_region | default(region | default('')) | default('') + tfc_pattern_repo_name | default('') | default('')) | hash('sha1') | truncate(8, True, '')) }}"
       when: workspace_name | length == 0
 
     - name: Ensure workspace directory exists
