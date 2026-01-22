@@ -28,22 +28,34 @@
           - "Workspace: {{ workspace_name }}"
           - "Cloud Provider: {{ tfc_cloud_provider | default('aws') }}"
 
+    - name: Set workspace path (use project directory for shared access)
+      set_fact:
+        workspace_path: "{{ ansible_env.AWX_PROJECT_ROOT | default('/runner/project') }}/workspaces/{{ workspace_name }}"
+    
+    - name: Ensure workspace directory exists
+      file:
+        path: "{{ workspace_path }}"
+        state: directory
+        mode: '0755'
+      when: workspace_name is defined and workspace_name | length > 0
+
     - name: Clone repository to module subdirectory
       include_role:
         name: clone_repo
       vars:
         repo_url: "{{ tfc_pattern_repo_name }}"
         repo_version: "{{ tfc_pattern_version }}"
-        repo_dest: "/tmp/workspaces/{{ workspace_name }}/module"
+        repo_dest: "{{ workspace_path }}/module"
       when: 
         - workspace_name is defined and workspace_name | length > 0
         - tfc_pattern_repo_name is defined
 
-    # Share workspace_name with subsequent jobs in the workflow
-    - name: Share workspace_name with workflow
+    # Share workspace_name and workspace_path with subsequent jobs in the workflow
+    - name: Share workspace info with workflow
       set_stats:
         data:
           workspace_name: "{{ workspace_name }}"
+          workspace_path: "{{ workspace_path }}"
         per_host: false
         aggregate: true
       when: workspace_name is defined and workspace_name | length > 0
