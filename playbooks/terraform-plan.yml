@@ -11,12 +11,24 @@
     callback_endpoint: "plan_success"
   
   tasks:
+    # ============================================
+    # Phase 0.1: Determine workspace name (support both TFC and local Terraform)
+    # ============================================
+    - name: Set workspace name (support both tfc_workspace_name and workspace_name)
+      set_fact:
+        workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default('') }}"
+    
+    - name: Generate workspace name from variables if not set
+      set_fact:
+        workspace_name: "{{ 'terraform-' + (role_name | default(resource_name | default('resource')) | default('deployment')) + '-' + (aws_region | default(region | default('us-east-1'))) + '-' + (ansible_date_time.epoch | string) }}"
+      when: workspace_name | length == 0
+
     - name: Ensure workspace directory exists
       file:
-        path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        path: "/tmp/workspaces/{{ workspace_name }}"
         state: directory
         mode: '0755'
-      when: tfc_workspace_name is defined
+      when: workspace_name is defined and workspace_name | length > 0
 
     # ============================================
     # Phase 0.5: Install Terraform (if not present)
@@ -24,7 +36,7 @@
     - name: Install Terraform if not present
       include_role:
         name: install_terraform
-      when: tfc_workspace_name is defined
+      when: workspace_name is defined and workspace_name | length > 0
 
     # ============================================
     # Phase 0.6: Validate workspace name and check for config
@@ -32,17 +44,17 @@
     - name: Validate workspace name is set
       fail:
         msg: |
-          tfc_workspace_name is not defined or empty.
+          Workspace name is not defined or empty.
           
-          This variable should be set by the orchestration service or workflow.
-          Check that the workflow is passing the correct variables.
+          For TFC: Set tfc_workspace_name variable
+          For local Terraform: Set workspace_name variable, or provide role_name/resource_name and region
           
           Expected format: /tmp/workspaces/{workspace_name}
-      when: tfc_workspace_name is not defined or tfc_workspace_name | length == 0
+      when: workspace_name is not defined or workspace_name | length == 0
 
     - name: Check if main.tf exists
       stat:
-        path: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
+        path: "/tmp/workspaces/{{ workspace_name }}/main.tf"
       register: main_tf_exists
 
     - name: Fail if main.tf does not exist with helpful error
@@ -52,7 +64,7 @@
           ERROR: Terraform configuration file missing
           ============================================
           
-          File not found: /tmp/workspaces/{{ tfc_workspace_name }}/main.tf
+          File not found: /tmp/workspaces/{{ workspace_name }}/main.tf
           
           This means the workflow is missing required steps before terraform-plan.
           
@@ -64,7 +76,8 @@
           5. terraform-apply          - Execute terraform apply
           
           CURRENT VARIABLES:
-          - tfc_workspace_name: {{ tfc_workspace_name | default('NOT SET - This is the problem!') }}
+          - workspace_name: {{ workspace_name | default('NOT SET - This is the problem!') }}
+          - tfc_workspace_name: {{ tfc_workspace_name | default('NOT SET') }}
           - tfc_pattern_repo_name: {{ tfc_pattern_repo_name | default('NOT SET') }}
           - tfc_pattern_version: {{ tfc_pattern_version | default('NOT SET') }}
           
@@ -87,7 +100,7 @@
       include_role:
         name: terraform_plan
       vars:
-        workspace_path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        workspace_path: "/tmp/workspaces/{{ workspace_name }}"
         terraform_vars: "{{ filtered_terraform_vars | default({}) }}"
       register: plan_result
       
@@ -108,7 +121,7 @@
         callback_status: "success"
         callback_endpoint: "plan_success"
         callback_plan_output: "{{ plan_output | default('') }}"
-        deployment_id: "{{ tfc_workspace_name }}"
+        deployment_id: "{{ workspace_name }}"
         execution_id: "{{ ansible_date_time.epoch }}"
       when: 
         - plan_status == 'success'
@@ -144,7 +157,7 @@
             "plan_output": {{ plan_output | default('') | to_json }},
             "plan_error": {{ plan_error | default('') | to_json }}
           }
-        dest: "/tmp/workspaces/{{ tfc_workspace_name }}/.plan_status.json"
+        dest: "/tmp/workspaces/{{ workspace_name }}/.plan_status.json"
         mode: '0644'
       when: plan_status is defined
 
@@ -153,4 +166,4 @@
         msg:
           - "Terraform plan completed"
           - "Status: {{ plan_status | default('unknown') }}"
-          - "Workspace: {{ tfc_workspace_name }}"
+          - "Workspace: {{ workspace_name }}"

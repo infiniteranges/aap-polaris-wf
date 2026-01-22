@@ -7,12 +7,24 @@
   gather_facts: yes
   
   tasks:
+    # ============================================
+    # Phase 0.1: Determine workspace name (support both TFC and local Terraform)
+    # ============================================
+    - name: Set workspace name (support both tfc_workspace_name and workspace_name)
+      set_fact:
+        workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default('') }}"
+    
+    - name: Generate workspace name from variables if not set
+      set_fact:
+        workspace_name: "{{ 'terraform-' + (role_name | default(resource_name | default('resource')) | default('deployment')) + '-' + (aws_region | default(region | default('us-east-1'))) + '-' + (ansible_date_time.epoch | string) }}"
+      when: workspace_name | length == 0
+
     - name: Ensure workspace directory exists
       file:
-        path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        path: "/tmp/workspaces/{{ workspace_name }}"
         state: directory
         mode: '0755'
-      when: tfc_workspace_name is defined
+      when: workspace_name is defined and workspace_name | length > 0
 
     - name: Create main.tf configuration file
       copy:
@@ -80,6 +92,8 @@
           output "iam_role_name" {
             value = aws_iam_role.this.name
           }
-        dest: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
+        dest: "/tmp/workspaces/{{ workspace_name }}/main.tf"
         mode: '0644'
-      when: tfc_pattern_repo_name is defined
+      when: 
+        - workspace_name is defined and workspace_name | length > 0
+        - tfc_pattern_repo_name is defined or role_name is defined
