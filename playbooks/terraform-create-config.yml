@@ -21,7 +21,7 @@
 
     - name: Set workspace path (use project directory for shared access, or from stats)
       set_fact:
-        workspace_path: "{{ ansible_stats.aggregate.workspace_path | default(ansible_env.AWX_PROJECT_ROOT | default('/runner/project')) }}/workspaces/{{ workspace_name }}"
+        workspace_path: "{{ ansible_stats.aggregate.workspace_path | default((ansible_env.AWX_PROJECT_ROOT | default('/runner/project')) ~ '/workspaces/' ~ workspace_name) }}"
     
     - name: Ensure workspace directory exists
       file:
