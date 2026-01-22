@@ -7,14 +7,26 @@
   gather_facts: yes
   
   tasks:
+    # ============================================
+    # Phase 0.1: Determine workspace name (support both TFC and local Terraform)
+    # ============================================
+    - name: Set workspace name (support both tfc_workspace_name and workspace_name)
+      set_fact:
+        workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default('') }}"
+    
+    - name: Generate workspace name from variables if not set
+      set_fact:
+        workspace_name: "{{ 'terraform-' + (role_name | default(resource_name | default('resource')) | default('deployment')) + '-' + (aws_region | default(region | default('us-east-1'))) + '-' + (ansible_date_time.epoch | string) }}"
+      when: workspace_name | length == 0
+
     - name: Display execution context
       debug:
         msg:
           - "=== Terraform Repository Clone Started ==="
-          - "Repository: {{ tfc_pattern_repo_name }}"
-          - "Version: {{ tfc_pattern_version }}"
-          - "Workspace: {{ tfc_workspace_name }}"
-          - "Cloud Provider: {{ tfc_cloud_provider }}"
+          - "Repository: {{ tfc_pattern_repo_name | default('') }}"
+          - "Version: {{ tfc_pattern_version | default('') }}"
+          - "Workspace: {{ workspace_name }}"
+          - "Cloud Provider: {{ tfc_cloud_provider | default('aws') }}"
 
     - name: Clone repository to module subdirectory
       include_role:
@@ -22,4 +34,7 @@
       vars:
         repo_url: "{{ tfc_pattern_repo_name }}"
         repo_version: "{{ tfc_pattern_version }}"
-        repo_dest: "/tmp/workspaces/{{ tfc_workspace_name }}/module"
+        repo_dest: "/tmp/workspaces/{{ workspace_name }}/module"
+      when: 
+        - workspace_name is defined and workspace_name | length > 0
+        - tfc_pattern_repo_name is defined
