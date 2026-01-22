@@ -26,6 +26,59 @@
         name: install_terraform
       when: tfc_workspace_name is defined
 
+    # ============================================
+    # Phase 0.6: Validate workspace name and check for config
+    # ============================================
+    - name: Validate workspace name is set
+      fail:
+        msg: |
+          tfc_workspace_name is not defined or empty.
+          
+          This variable should be set by the orchestration service or workflow.
+          Check that the workflow is passing the correct variables.
+          
+          Expected format: /tmp/workspaces/{workspace_name}
+      when: tfc_workspace_name is not defined or tfc_workspace_name | length == 0
+
+    - name: Check if main.tf exists
+      stat:
+        path: "/tmp/workspaces/{{ tfc_workspace_name }}/main.tf"
+      register: main_tf_exists
+
+    - name: Fail if main.tf does not exist with helpful error
+      fail:
+        msg: |
+          ============================================
+          ERROR: Terraform configuration file missing
+          ============================================
+          
+          File not found: /tmp/workspaces/{{ tfc_workspace_name }}/main.tf
+          
+          This means the workflow is missing required steps before terraform-plan.
+          
+          REQUIRED WORKFLOW STEPS (in order):
+          1. terraform-clone-repo    - Clone the Terraform module repository
+          2. terraform-install        - Install Terraform (or done in plan step)
+          3. terraform-create-config  - Create the main.tf configuration file
+          4. terraform-plan           - Execute terraform plan (current step)
+          5. terraform-apply          - Execute terraform apply
+          
+          CURRENT VARIABLES:
+          - tfc_workspace_name: {{ tfc_workspace_name | default('NOT SET - This is the problem!') }}
+          - tfc_pattern_repo_name: {{ tfc_pattern_repo_name | default('NOT SET') }}
+          - tfc_pattern_version: {{ tfc_pattern_version | default('NOT SET') }}
+          
+          SOLUTION:
+          Ensure your AAP workflow template (ID: {{ workflow_template_id | default('unknown') }}) 
+          includes ALL required steps in the correct order.
+          
+          Check your workflow template configuration in AAP and ensure it has:
+          - terraform-clone-repo job template
+          - terraform-create-config job template  
+          - terraform-plan job template (current)
+          - terraform-apply job template
+      when: not main_tf_exists.stat.exists
+
     - name: Filter out AWS credential variables from terraform_vars
       set_fact:
         filtered_terraform_vars: "{{ tfc_variables | default({}) | dict2items | rejectattr('key', 'in', ['aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'aws_region']) | items2dict }}"
