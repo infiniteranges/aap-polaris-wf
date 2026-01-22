@@ -41,6 +41,16 @@
       debug:
         msg: "Creating main.tf at: {{ workspace_path }}/main.tf"
     
+    - name: Verify workspace directory exists before creating main.tf
+      stat:
+        path: "{{ workspace_path }}"
+      register: workspace_dir_stat
+    
+    - name: Fail if workspace directory doesn't exist
+      fail:
+        msg: "Workspace directory {{ workspace_path }} does not exist!"
+      when: not workspace_dir_stat.stat.exists
+    
     - name: Create main.tf configuration file
       copy:
         content: |
@@ -112,3 +122,30 @@
       when: 
         - workspace_name is defined and workspace_name | length > 0
         - tfc_pattern_repo_name is defined or role_name is defined
+      register: main_tf_result
+    
+    - name: Verify main.tf was created
+      stat:
+        path: "{{ workspace_path }}/main.tf"
+      register: main_tf_stat
+    
+    - name: Fail if main.tf doesn't exist after creation
+      fail:
+        msg: "main.tf was not created at {{ workspace_path }}/main.tf even though copy task succeeded!"
+      when: not main_tf_stat.stat.exists
+    
+    - name: Display main.tf file details
+      debug:
+        msg:
+          - "main.tf exists: {{ main_tf_stat.stat.exists }}"
+          - "main.tf path: {{ main_tf_stat.stat.path }}"
+          - "main.tf size: {{ main_tf_stat.stat.size | default('N/A') }} bytes"
+    
+    - name: List workspace directory contents after creation
+      command: ls -la "{{ workspace_path }}"
+      register: workspace_after
+      changed_when: false
+    
+    - name: Display workspace contents after
+      debug:
+        var: workspace_after.stdout_lines
