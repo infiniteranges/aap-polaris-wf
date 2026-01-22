@@ -28,9 +28,9 @@
           - "Workspace: {{ workspace_name }}"
           - "Cloud Provider: {{ tfc_cloud_provider | default('aws') }}"
 
-    - name: Set workspace path (use project directory for shared access)
+    - name: Set workspace path (use shared /tmp location that persists across jobs on same execution node)
       set_fact:
-        workspace_path: "{{ ansible_env.AWX_PROJECT_ROOT | default('/runner/project') }}/workspaces/{{ workspace_name }}"
+        workspace_path: "/tmp/awx-workspaces/{{ workspace_name }}"
     
     - name: Ensure workspace directory exists
       file:
