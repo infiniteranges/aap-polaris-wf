@@ -22,12 +22,7 @@
 
 - name: Check if plan file exists
   stat:
-    path: "{{ workspace_path }}/{{ plan_file }}"
-  register: plan_file_stat
-
-- name: Check if plan file exists
-  stat:
-    path: "{{ workspace_path }}/tfplan"
+    path: "{{ workspace_path }}/{{ plan_file | default('tfplan') }}"
   register: plan_file_stat
 
 - name: Set default terraform_vars if not defined
