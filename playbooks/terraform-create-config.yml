@@ -7,6 +7,13 @@
   gather_facts: yes
   
   tasks:
+    - name: Ensure workspace directory exists
+      file:
+        path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        state: directory
+        mode: '0755'
+      when: tfc_workspace_name is defined
+
     - name: Create main.tf configuration file
       copy:
         content: |

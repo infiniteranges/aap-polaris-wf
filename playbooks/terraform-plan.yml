@@ -11,6 +11,13 @@
     callback_endpoint: "plan_success"
   
   tasks:
+    - name: Ensure workspace directory exists
+      file:
+        path: "/tmp/workspaces/{{ tfc_workspace_name }}"
+        state: directory
+        mode: '0755'
+      when: tfc_workspace_name is defined
+
     - name: Filter out AWS credential variables from terraform_vars
       set_fact:
         filtered_terraform_vars: "{{ tfc_variables | default({}) | dict2items | rejectattr('key', 'in', ['aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'aws_region']) | items2dict }}"
