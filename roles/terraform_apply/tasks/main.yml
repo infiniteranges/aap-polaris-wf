@@ -30,12 +30,17 @@
     path: "{{ workspace_path }}/tfplan"
   register: plan_file_stat
 
+- name: Set default terraform_vars if not defined
+  set_fact:
+    terraform_vars_safe: "{{ terraform_vars | default({}) }}"
+  when: terraform_vars is not defined
+
 - name: Run terraform plan if plan file doesn't exist (fallback for workflow isolation)
   include_role:
     name: terraform_plan
   vars:
     workspace_path: "{{ workspace_path }}"
-    terraform_vars: "{{ terraform_vars | default({}) }}"
+    terraform_vars: "{{ terraform_vars_safe | default({}) }}"
   register: plan_result
   when: not plan_file_stat.stat.exists
 
