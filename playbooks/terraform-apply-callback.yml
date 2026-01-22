@@ -1,0 +1,43 @@
+---
+# Terraform Apply Callback Playbook
+# Sends callback to orchestration service after terraform apply completes
+
+- name: Send Terraform Apply Callback
+  hosts: localhost
+  gather_facts: yes
+  
+  tasks:
+    - name: Determine workspace path
+      set_fact:
+        workspace_path: "{{ ansible_stats.aggregate.workspace_path | default('/tmp/awx-workspaces/' + (tfc_workspace_name | default(workspace_name | default('')))) }}"
+    
+    - name: Get apply status from outputs file if available
+      slurp:
+        src: "{{ workspace_path }}/outputs.json"
+      register: apply_outputs_file
+      failed_when: false
+      changed_when: false
+    
+    - name: Set apply status
+      set_fact:
+        apply_status: "{{ 'success' if (apply_outputs_file.content is defined and apply_outputs_file.content | length > 0) else 'unknown' }}"
+    
+    - name: Send apply_success callback to orchestration service
+      uri:
+        url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/terraform/callback/{{ ansible_workflow_job_id | default(ansible_job_id) }}"
+        method: POST
+        body_format: json
+        body:
+          callbackType: "apply_success"
+        status_code: [200, 201]
+      register: callback_result
+      failed_when: false
+      changed_when: false
+      when: apply_status == 'success'
+    
+    - name: Display callback result
+      debug:
+        msg:
+          - "Apply callback sent"
+          - "Status: {{ apply_status }}"
+          - "Callback result: {{ callback_result.status | default('not sent') }}"
