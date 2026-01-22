@@ -38,3 +38,12 @@
       when: 
         - workspace_name is defined and workspace_name | length > 0
         - tfc_pattern_repo_name is defined
+
+    # Share workspace_name with subsequent jobs in the workflow
+    - name: Share workspace_name with workflow
+      set_stats:
+        data:
+          workspace_name: "{{ workspace_name }}"
+        per_host: false
+        aggregate: true
+      when: workspace_name is defined and workspace_name | length > 0

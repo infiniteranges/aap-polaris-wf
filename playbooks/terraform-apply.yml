@@ -13,9 +13,9 @@
     # ============================================
     # Phase 0.1: Determine workspace name (support both TFC and local Terraform)
     # ============================================
-    - name: Set workspace name (support both tfc_workspace_name and workspace_name)
+    - name: Set workspace name (support both tfc_workspace_name and workspace_name, and workflow stats)
       set_fact:
-        workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default('') }}"
+        workspace_name: "{{ tfc_workspace_name | default(workspace_name) | default(ansible_stats.aggregate.workspace_name | default('')) }}"
     
     - name: Generate workspace name from variables if not set (deterministic hash)
       set_fact:
