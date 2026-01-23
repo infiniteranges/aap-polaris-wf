@@ -63,8 +63,9 @@
 
     # ============================================
     # Create main.tf if it doesn't exist (fallback for workflow isolation issues)
+    # Only for IAM role creation, NOT for EC2 or other resources
     # ============================================
-    - name: Create main.tf if it doesn't exist
+    - name: Create main.tf if it doesn't exist (IAM role fallback only)
       copy:
         content: |
           terraform {
@@ -118,7 +119,7 @@
             {% endif %}
           }
 
-          {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns, '') %}
+          {% set policy_arns = tfc_variables.managed_policy_arns | default(managed_policy_arns | default(''), '') %}
           {% if policy_arns | length > 0 %}
           {% if policy_arns is string %}
           {% set policies = policy_arns.split(',') %}
@@ -150,7 +151,10 @@
       when: 
         - not main_tf_exists.stat.exists
         - workspace_name is defined and workspace_name | length > 0
-        - tfc_pattern_repo_name is defined or role_name is defined or (instance_name is defined or instance_type is defined)
+        - role_name is defined
+        - role_name | length > 0
+        - instance_name is not defined
+        - instance_type is not defined
 
     - name: Verify main.tf exists after creation attempt
       stat:
