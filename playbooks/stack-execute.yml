@@ -1,0 +1,308 @@
+---
+# Stack Execution Playbook
+# Executes a stack using Terragrunt with dependency management
+# This playbook is called by AAP workflow to execute stacks
+
+- name: Execute Stack with Terragrunt
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    execution_id: "{{ execution_id | default(ansible_date_time.epoch) }}"
+    stack_name: "{{ stack_name | required }}"
+    provider: "{{ provider | default('aws') }}"
+    region: "{{ region | default('us-east-1') }}"
+    environment: "{{ environment | default('production') }}"
+    workspace_path: "/tmp/terragrunt-workspaces/{{ execution_id }}"
+    state_backend: "{{ state_backend | default('local') }}"
+    require_approval: "{{ require_approval | default(false) }}"
+
+  tasks:
+    - name: Display stack execution information
+      debug:
+        msg:
+          - "Stack Execution Started"
+          - "Execution ID: {{ execution_id }}"
+          - "Stack Name: {{ stack_name }}"
+          - "Provider: {{ provider }}"
+          - "Region: {{ region }}"
+          - "Environment: {{ environment }}"
+          - "Workspace Path: {{ workspace_path }}"
+          - "State Backend: {{ state_backend }}"
+
+    - name: Ensure workspace directory exists
+      file:
+        path: "{{ workspace_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Check if Terragrunt is installed
+      command: terragrunt --version
+      register: terragrunt_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Terragrunt if not present
+      block:
+        - name: Download Terragrunt
+          get_url:
+            url: "https://github.com/gruntwork-io/terragrunt/releases/download/v0.54.0/terragrunt_linux_amd64"
+            dest: "/tmp/terragrunt"
+            mode: '0755'
+
+        - name: Install Terragrunt to /usr/local/bin
+          copy:
+            src: "/tmp/terragrunt"
+            dest: "/usr/local/bin/terragrunt"
+            mode: '0755'
+            remote_src: yes
+
+        - name: Verify Terragrunt installation
+          command: terragrunt --version
+          register: terragrunt_installed
+          changed_when: false
+
+        - name: Display Terragrunt version
+          debug:
+            msg: "Terragrunt installed: {{ terragrunt_installed.stdout }}"
+      when: terragrunt_version_check.rc != 0
+
+    - name: Check if Terraform is installed
+      command: terraform --version
+      register: terraform_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Terraform if not present
+      block:
+        - name: Download Terraform
+          get_url:
+            url: "https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip"
+            dest: "/tmp/terraform.zip"
+
+        - name: Unzip Terraform
+          unarchive:
+            src: "/tmp/terraform.zip"
+            dest: "/tmp"
+            remote_src: yes
+
+        - name: Install Terraform to /usr/local/bin
+          copy:
+            src: "/tmp/terraform"
+            dest: "/usr/local/bin/terraform"
+            mode: '0755'
+            remote_src: yes
+
+        - name: Verify Terraform installation
+          command: terraform --version
+          register: terraform_installed
+          changed_when: false
+
+        - name: Display Terraform version
+          debug:
+            msg: "Terraform installed: {{ terraform_installed.stdout }}"
+      when: terraform_version_check.rc != 0
+
+    - name: Write Terragrunt configuration files
+      copy:
+        content: "{{ item.content }}"
+        dest: "{{ workspace_path }}/{{ item.path }}"
+        mode: '0644'
+      loop: "{{ terragrunt_config_files | default([]) }}"
+      when: terragrunt_config_files is defined
+
+    - name: Set AWS credentials from environment
+      set_fact:
+        aws_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') | default('') }}"
+        aws_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') | default('') }}"
+        aws_session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default('') }}"
+
+    - name: Initialize Terragrunt
+      block:
+        - name: Run Terragrunt init
+          command: terragrunt run-all init --terragrunt-working-dir {{ workspace_path }}
+          environment:
+            AWS_REGION: "{{ region }}"
+            AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+            AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+            AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
+            TF_INPUT: "0"
+            TF_IN_AUTOMATION: "1"
+          register: terragrunt_init
+          changed_when: false
+
+        - name: Display Terragrunt init output
+          debug:
+            var: terragrunt_init.stdout_lines
+      rescue:
+        - name: Send init failure callback
+          uri:
+            url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/stacks/executions/{{ execution_id }}/plan-callback"
+            method: POST
+            body_format: json
+            body:
+              executionId: "{{ execution_id }}"
+              status: "failed"
+              error: "Terragrunt init failed: {{ terragrunt_init.stderr | default('Unknown error') }}"
+              logs: "{{ terragrunt_init.stdout | default('') }}\n{{ terragrunt_init.stderr | default('') }}"
+            status_code: [200, 201, 404]
+          failed_when: false
+          ignore_errors: yes
+
+        - name: Fail with init error
+          fail:
+            msg: "Terragrunt init failed: {{ terragrunt_init.stderr | default('Unknown error') }}"
+
+    - name: Execute Terragrunt plan
+      block:
+        - name: Run Terragrunt plan
+          command: terragrunt run-all plan --terragrunt-working-dir {{ workspace_path }}
+          environment:
+            AWS_REGION: "{{ region }}"
+            AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+            AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+            AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
+            TF_INPUT: "0"
+            TF_IN_AUTOMATION: "1"
+          register: terragrunt_plan
+          changed_when: false
+
+        - name: Display Terragrunt plan output
+          debug:
+            var: terragrunt_plan.stdout_lines
+
+        - name: Save plan output to file
+          copy:
+            content: "{{ terragrunt_plan.stdout }}"
+            dest: "{{ workspace_path }}/plan_output.txt"
+            mode: '0644'
+
+        - name: Send plan callback to orchestration service
+          uri:
+            url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/stacks/executions/{{ execution_id }}/plan-callback"
+            method: POST
+            body_format: json
+            body:
+              executionId: "{{ execution_id }}"
+              planOutput: "{{ terragrunt_plan.stdout }}"
+              planSummary:
+                additions: "{{ terragrunt_plan.stdout | regex_search('Plan: (\\d+) to add', '\\1') | default('0') | int }}"
+                changes: "{{ terragrunt_plan.stdout | regex_search('(\\d+) to change', '\\1') | default('0') | int }}"
+                deletions: "{{ terragrunt_plan.stdout | regex_search('(\\d+) to destroy', '\\1') | default('0') | int }}"
+            status_code: [200, 201, 404]
+          register: plan_callback
+          failed_when: false
+          ignore_errors: yes
+      rescue:
+        - name: Send plan failure callback
+          uri:
+            url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/stacks/executions/{{ execution_id }}/plan-callback"
+            method: POST
+            body_format: json
+            body:
+              executionId: "{{ execution_id }}"
+              status: "failed"
+              error: "Terragrunt plan failed: {{ terragrunt_plan.stderr | default('Unknown error') }}"
+              logs: "{{ terragrunt_plan.stdout | default('') }}\n{{ terragrunt_plan.stderr | default('') }}"
+            status_code: [200, 201, 404]
+          failed_when: false
+          ignore_errors: yes
+
+        - name: Fail with plan error
+          fail:
+            msg: "Terragrunt plan failed: {{ terragrunt_plan.stderr | default('Unknown error') }}"
+
+    - name: Check if approval is required
+      set_fact:
+        needs_approval: "{{ require_approval | bool }}"
+
+    - name: Wait for approval if required
+      pause:
+        prompt: "Stack execution plan completed. Review the plan output and approve to continue with apply."
+        echo: yes
+      when: needs_approval | bool
+
+    - name: Execute Terragrunt apply
+      block:
+        - name: Run Terragrunt apply
+          command: terragrunt run-all apply --terragrunt-non-interactive --terragrunt-working-dir {{ workspace_path }}
+          environment:
+            AWS_REGION: "{{ region }}"
+            AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+            AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+            AWS_SESSION_TOKEN: "{{ aws_session_token | default('') }}"
+            TF_INPUT: "0"
+            TF_IN_AUTOMATION: "1"
+          register: terragrunt_apply
+          when: not (needs_approval | bool) or approval_granted | default(false) | bool
+
+        - name: Display Terragrunt apply output
+          debug:
+            var: terragrunt_apply.stdout_lines
+          when: terragrunt_apply is defined
+      rescue:
+        - name: Send apply failure callback
+          uri:
+            url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/stacks/executions/{{ execution_id }}/apply-callback"
+            method: POST
+            body_format: json
+            body:
+              executionId: "{{ execution_id }}"
+              status: "failed"
+              error: "Terragrunt apply failed: {{ terragrunt_apply.stderr | default('Unknown error') }}"
+              logs: "{{ terragrunt_apply.stdout | default('') }}\n{{ terragrunt_apply.stderr | default('') }}"
+            status_code: [200, 201, 404]
+          failed_when: false
+          ignore_errors: yes
+          when: terragrunt_apply is defined
+
+        - name: Fail with apply error
+          fail:
+            msg: "Terragrunt apply failed: {{ terragrunt_apply.stderr | default('Unknown error') if terragrunt_apply is defined else 'Apply task failed' }}"
+
+    - name: Collect outputs from each module
+      shell: |
+        # Sanitize template ID to match directory name (remove hyphens, take first 8 + last 4 chars if > 12)
+        TEMPLATE_ID="{{ item.templateId }}"
+        CLEANED=$${TEMPLATE_ID//-/}
+        if [ $${#CLEANED} -gt 12 ]; then
+          MODULE_DIR="$${CLEANED:0:8}-$${CLEANED: -4}"
+        else
+          MODULE_DIR="$$CLEANED"
+        fi
+        cd {{ workspace_path }}/$$MODULE_DIR
+        terragrunt output -json 2>/dev/null || echo '{}'
+      register: module_outputs
+      loop: "{{ templates | default([]) }}"
+      changed_when: false
+      failed_when: false
+      when: templates is defined
+
+    - name: Send apply success callback to orchestration service
+      uri:
+        url: "{{ callback_base_url | default('http://orchestration:3000') }}/api/orchestration/stacks/executions/{{ execution_id }}/apply-callback"
+        method: POST
+        body_format: json
+        body:
+          executionId: "{{ execution_id }}"
+          status: "{{ 'completed' if terragrunt_apply.rc == 0 else 'failed' }}"
+          outputs: "{{ module_outputs.results | map(attribute='stdout') | map('from_json') | list | combine }}"
+          templateOutputs: "{{ dict(module_outputs.results | map(attribute='item') | map(attribute='templateId') | list | zip(module_outputs.results | map(attribute='stdout') | map('from_json') | list)) }}"
+          logs: "{{ terragrunt_apply.stdout | default('') }}"
+          error: "{{ terragrunt_apply.stderr | default('') if terragrunt_apply.rc != 0 else '' }}"
+        status_code: [200, 201, 404]
+      register: apply_callback
+      failed_when: false
+      ignore_errors: yes
+      when: terragrunt_apply is defined
+
+    - name: Set execution status
+      set_fact:
+        execution_status: "{{ 'completed' if terragrunt_apply.rc == 0 else 'failed' }}"
+        execution_error: "{{ terragrunt_apply.stderr | default('') if terragrunt_apply.rc != 0 else '' }}"
+
+    - name: Display final status
+      debug:
+        msg:
+          - "Stack Execution {{ execution_status }}"
+          - "Execution ID: {{ execution_id }}"
+          - "{% if execution_error %}Error: {{ execution_error }}{% endif %}"
