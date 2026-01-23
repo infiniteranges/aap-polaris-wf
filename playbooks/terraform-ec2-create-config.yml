@@ -1,0 +1,121 @@
+---
+# Terraform EC2 Configuration Creation Playbook
+# Creates main.tf for EC2 instance using terraform-aws-modules/terraform-aws-ec2-instance
+# Properly maps EC2 template variables to module input variables
+
+- name: Create Terraform EC2 Configuration
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    workspace_name: "{{ tfc_workspace_name | default(ansible_date_time.epoch) }}"
+    workspace_path: "/tmp/awx-workspaces/{{ workspace_name }}"
+    
+  tasks:
+    - name: Set workspace name (support both tfc_workspace_name and workspace_name)
+      set_fact:
+        workspace_name: "{{ tfc_workspace_name | default(workspace_name) }}"
+    
+    - name: Set workspace path (use shared /tmp location)
+      set_fact:
+        workspace_path: "/tmp/awx-workspaces/{{ workspace_name }}"
+    
+    - name: Display execution context
+      debug:
+        msg:
+          - "=== Terraform EC2 Configuration Creation ==="
+          - "Repository: {{ tfc_pattern_repo_name | default('terraform-aws-modules/terraform-aws-ec2-instance') }}"
+          - "Version: {{ tfc_pattern_version | default('v5.0.0') }}"
+          - "Workspace: {{ workspace_name }}"
+          - "Cloud Provider: {{ tfc_cloud_provider | default('aws') }}"
+    
+    - name: Ensure workspace directory exists
+      file:
+        path: "{{ workspace_path }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Display main.tf destination path
+      debug:
+        msg: "Creating main.tf at: {{ workspace_path }}/main.tf"
+    
+    - name: Verify workspace directory exists before creating main.tf
+      stat:
+        path: "{{ workspace_path }}"
+      register: workspace_stat
+    
+    - name: Create main.tf configuration file for EC2
+      copy:
+        content: |
+          terraform {
+            required_version = ">= 1.0"
+            
+            required_providers {
+              aws = {
+                source  = "hashicorp/aws"
+                version = "~> 5.0"
+              }
+            }
+          }
+          
+          # Use terraform-aws-modules/terraform-aws-ec2-instance module
+          module "ec2_instance" {
+            source  = "terraform-aws-modules/ec2-instance/aws"
+            version = "{{ tfc_pattern_version | default('5.0.0') }}"
+            
+            # Map EC2 template variables to module variables
+            name = "{{ instance_name | default('ec2-instance') }}"
+            
+            instance_type          = "{{ instance_type | default('t3.micro') }}"
+            key_name               = "{{ key_name | default('') }}"
+            monitoring             = {{ enable_monitoring | default(false) | lower }}
+            vpc_security_group_ids = {{ security_group_ids | default([]) | to_json }}
+            subnet_id              = "{{ subnet_id | default('') }}"
+            
+            # AMI configuration (optional - module will use default if not provided)
+            {% if ami_id is defined and ami_id | length > 0 %}
+            ami = "{{ ami_id }}"
+            {% endif %}
+            
+            # Root volume configuration
+            root_block_device = [
+              {
+                volume_type = "{{ volume_type | default('gp3') }}"
+                volume_size = {{ volume_size | default(20) | int }}
+                encrypted   = {{ enable_encryption | default(true) | lower }}
+              }
+            ]
+            
+            # Tags
+            tags = {
+              Name        = "{{ instance_name | default('ec2-instance') }}"
+              Environment = "{{ environment | default('dev') }}"
+              ManagedBy   = "Service Catalog"
+              {% if createdby is defined and createdby | length > 0 %}
+              CreatedBy   = "{{ createdby }}"
+              {% endif %}
+            }
+          }
+          
+          # Outputs
+          output "instance_id" {
+            description = "ID of the EC2 instance"
+            value       = module.ec2_instance.id
+          }
+          
+          output "instance_arn" {
+            description = "ARN of the EC2 instance"
+            value       = module.ec2_instance.arn
+          }
+          
+          output "instance_public_ip" {
+            description = "Public IP address of the EC2 instance"
+            value       = module.ec2_instance.public_ip
+          }
+          
+          output "instance_private_ip" {
+            description = "Private IP address of the EC2 instance"
+            value       = module.ec2_instance.private_ip
+          }
+        dest: "{{ workspace_path }}/main.tf"
+        mode: '0644'
+      when: workspace_stat.stat.exists
