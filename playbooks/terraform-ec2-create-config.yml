@@ -8,7 +8,6 @@
   gather_facts: yes
   vars:
     workspace_name: "{{ tfc_workspace_name | default(ansible_date_time.epoch) }}"
-    workspace_path: "{{ project_path | default('/runner/project') }}/workspaces/{{ workspace_name }}"
     
   tasks:
     - name: Set workspace name (support both tfc_workspace_name and workspace_name)
