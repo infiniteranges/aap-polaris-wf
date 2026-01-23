@@ -18,6 +18,14 @@
       set_fact:
         workspace_path: "{{ ansible_stats.aggregate.workspace_path | default((project_path | default('/runner/project')) + '/workspaces/' + workspace_name) }}"
     
+    - name: Display workspace path for debugging
+      debug:
+        msg:
+          - "Workspace path: {{ workspace_path }}"
+          - "Project path: {{ project_path | default('NOT SET') }}"
+          - "Workspace name: {{ workspace_name }}"
+          - "Stats workspace_path: {{ ansible_stats.aggregate.workspace_path | default('NOT SET') }}"
+    
     - name: Display execution context
       debug:
         msg:
