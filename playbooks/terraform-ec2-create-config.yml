@@ -43,6 +43,14 @@
         path: "{{ workspace_path }}"
       register: workspace_stat
     
+    - name: Save workspace path to workflow stats for subsequent nodes
+      set_stats:
+        data:
+          workspace_name: "{{ workspace_name }}"
+          workspace_path: "{{ workspace_path }}"
+        per_host: false
+        aggregate: true
+
     - name: Create main.tf configuration file for EC2
       copy:
         content: |
