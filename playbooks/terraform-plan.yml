@@ -82,7 +82,7 @@
           }
 
           resource "aws_iam_role" "this" {
-            name = "{{ (tfc_variables.role_name | default(role_name)) }}"
+            name = "{{ (tfc_variables.role_name | default(role_name | default(''))) }}"
             {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
             {% if assume_policy | length > 0 %}
             {% if assume_policy.startswith('{') or assume_policy.startswith('[') %}
@@ -150,7 +150,7 @@
       when: 
         - not main_tf_exists.stat.exists
         - workspace_name is defined and workspace_name | length > 0
-        - tfc_pattern_repo_name is defined or role_name is defined
+        - tfc_pattern_repo_name is defined or role_name is defined or (instance_name is defined or instance_type is defined)
 
     - name: Verify main.tf exists after creation attempt
       stat:
