@@ -1,0 +1,39 @@
+---
+# Generic Callback Playbook
+# Standalone playbook for sending callbacks (useful for manual callbacks or retries)
+
+- name: Send Callback to Polaris
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Required variables
+    callback_base_url: "{{ callback_base_url | required }}"
+    deployment_id: "{{ deployment_id | required }}"
+    stack_type: "{{ stack_type | required }}"
+    component: "{{ component | required }}"
+    phase: "{{ phase | required }}"
+    status: "{{ status | required }}"
+    
+    # Optional variables
+    outputs: "{{ outputs | default({}) }}"
+    error: "{{ error | default(null) }}"
+    plan_summary: "{{ plan_summary | default(null) }}"
+    plan_output: "{{ plan_output | default(null) }}"
+    apply_output: "{{ apply_output | default(null) }}"
+
+  tasks:
+    - name: Send callback
+      include_role:
+        name: callback_notify
+      vars:
+        callback_base_url: "{{ callback_base_url }}"
+        deployment_id: "{{ deployment_id }}"
+        stack_type: "{{ stack_type }}"
+        component: "{{ component }}"
+        phase: "{{ phase }}"
+        status: "{{ status }}"
+        outputs: "{{ outputs }}"
+        error: "{{ error }}"
+        plan_summary: "{{ plan_summary }}"
+        plan_output: "{{ plan_output }}"
+        apply_output: "{{ apply_output }}"

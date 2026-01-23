@@ -1,102 +1,121 @@
 ---
-# Terragrunt plan role
-# Executes terragrunt plan and captures output
+# Generic Terragrunt Plan Role
+# Executes 'terragrunt plan' in a specified working directory
+# This role is component-agnostic and reusable
 
-- name: Validate workspace path exists
+- name: Validate required variables
   assert:
     that:
-      - workspace_path is defined
-      - workspace_path | length > 0
-    fail_msg: "workspace_path must be defined and non-empty"
-    success_msg: "Workspace path validated: {{ workspace_path }}"
+      - working_dir is defined
+      - working_dir != ""
+    fail_msg: "working_dir must be defined and non-empty"
+    quiet: true
 
-- name: Check if workspace directory exists
-  stat:
-    path: "{{ workspace_path }}"
-  register: workspace_stat
-
-- name: Fail if workspace directory does not exist
-  fail:
-    msg: "Workspace directory does not exist: {{ workspace_path }}"
-  when: not workspace_stat.stat.exists
-
-- name: Check if terragrunt binary is available
-  command: which {{ terragrunt_binary }}
-  register: terragrunt_binary_check
+- name: Check if Terragrunt is installed
+  command: terragrunt --version
+  register: terragrunt_version_check
   changed_when: false
   failed_when: false
 
-- name: Fail if terragrunt binary not found
-  fail:
-    msg: "Terragrunt binary '{{ terragrunt_binary }}' not found in PATH"
-  when: terragrunt_binary_check.rc != 0
+- name: Install Terragrunt if not present
+  block:
+    - name: Download Terragrunt
+      get_url:
+        url: "https://github.com/gruntwork-io/terragrunt/releases/download/v0.54.0/terragrunt_linux_amd64"
+        dest: "/tmp/terragrunt"
+        mode: '0755'
 
-- name: Check if terragrunt config file exists
-  stat:
-    path: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ terragrunt_config_file }}"
-  register: terragrunt_config_stat
+    - name: Install Terragrunt to /usr/local/bin
+      copy:
+        src: "/tmp/terragrunt"
+        dest: "/usr/local/bin/terragrunt"
+        mode: '0755'
+        remote_src: yes
 
-- name: Warn if terragrunt config file not found
+    - name: Verify Terragrunt installation
+      command: terragrunt --version
+      register: terragrunt_installed
+      changed_when: false
+  when: terragrunt_version_check.rc != 0
+
+- name: Check if Terraform is installed
+  command: terraform --version
+  register: terraform_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Terraform if not present
+  block:
+    - name: Download Terraform
+      get_url:
+        url: "https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip"
+        dest: "/tmp/terraform.zip"
+
+    - name: Unzip Terraform
+      unarchive:
+        src: "/tmp/terraform.zip"
+        dest: "/tmp"
+        remote_src: yes
+
+    - name: Install Terraform to /usr/local/bin
+      copy:
+        src: "/tmp/terraform"
+        dest: "/usr/local/bin/terraform"
+        mode: '0755'
+        remote_src: yes
+
+    - name: Verify Terraform installation
+      command: terraform --version
+      register: terraform_installed
+      changed_when: false
+  when: terraform_version_check.rc != 0
+
+- name: Ensure working directory exists
+  file:
+    path: "{{ working_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Run Terragrunt init
+  command: terragrunt init --terragrunt-working-dir {{ working_dir }}
+  environment: "{{ environment_vars | default({}) }}"
+  register: terragrunt_init
+  changed_when: false
+
+- name: Display Terragrunt init output
   debug:
-    msg: "Warning: Terragrunt config file not found at {{ workspace_path }}/{{ terragrunt_working_dir }}/{{ terragrunt_config_file }}. Terragrunt may use defaults."
-  when: not terragrunt_config_stat.stat.exists
+    var: terragrunt_init.stdout_lines
+  when: terragrunt_init.stdout_lines is defined
 
-- name: Create terraform variables file if variables provided
+- name: Run Terragrunt plan
+  command: terragrunt plan --terragrunt-working-dir {{ working_dir }} -out={{ working_dir }}/plan.out
+  environment: "{{ environment_vars | default({}) }}"
+  register: terragrunt_plan
+  changed_when: false
+
+- name: Display Terragrunt plan output
+  debug:
+    var: terragrunt_plan.stdout_lines
+  when: terragrunt_plan.stdout_lines is defined
+
+- name: Save plan output to file
   copy:
-    content: |
-      {% for key, value in terraform_vars.items() %}
-      {{ key }} = "{{ value }}"
-      {% endfor %}
-    dest: "{{ workspace_path }}/{{ terragrunt_working_dir }}/terraform.tfvars"
-    mode: '0600'
-  when: terraform_vars is defined and terraform_vars | length > 0
-
-- name: Build terragrunt plan command
-  set_fact:
-    terragrunt_plan_cmd: >-
-      {{ terragrunt_binary }} plan
-      {% if terraform_var_file is defined and terraform_var_file is not none %}
-      -var-file={{ terraform_var_file }}
-      {% endif %}
-      {% for key, value in terraform_vars.items() %}
-      -var="{{ key }}={{ value }}"
-      {% endfor %}
-      -out={{ plan_file }}
-      {% for arg in terragrunt_extra_args %}
-      {{ arg }}
-      {% endfor %}
-
-- name: Execute terragrunt plan
-  command: "{{ terragrunt_plan_cmd }}"
-  args:
-    chdir: "{{ workspace_path }}/{{ terragrunt_working_dir }}"
-  environment: "{{ terragrunt_env }}"
-  register: terragrunt_plan_result
-  failed_when: false  # We'll check the return code manually
-
-- name: Capture plan output to file
-  copy:
-    content: "{{ terragrunt_plan_result.stdout }}"
-    dest: "{{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_output_file }}"
+    content: "{{ terragrunt_plan.stdout }}"
+    dest: "{{ working_dir }}/plan_output.txt"
     mode: '0644'
-  when: terragrunt_plan_result.stdout is defined
 
-- name: Set plan status based on return code
+- name: Extract plan summary
   set_fact:
-    plan_status: "{{ 'success' if terragrunt_plan_result.rc == 0 else 'failed' }}"
-    plan_output: "{{ terragrunt_plan_result.stdout | default('') }}"
-    plan_error: "{{ terragrunt_plan_result.stderr | default('') if terragrunt_plan_result.rc != 0 else null }}"
+    plan_summary:
+      additions: "{{ terragrunt_plan.stdout | regex_search('Plan: (\\d+) to add', '\\1') | default('0') | int }}"
+      changes: "{{ terragrunt_plan.stdout | regex_search('(\\d+) to change', '\\1') | default('0') | int }}"
+      deletions: "{{ terragrunt_plan.stdout | regex_search('(\\d+) to destroy', '\\1') | default('0') | int }}"
 
-- name: Display plan summary
-  debug:
-    msg:
-      - "Terragrunt plan completed"
-      - "Status: {{ plan_status }}"
-      - "Return code: {{ terragrunt_plan_result.rc }}"
-      - "Plan file: {{ workspace_path }}/{{ terragrunt_working_dir }}/{{ plan_file }}"
-      - "Working directory: {{ terragrunt_working_dir }}"
-
-- name: Fail if plan failed
-  fail:
-    msg: "Terragrunt plan failed: {{ plan_error }}"
-  when: plan_status == 'failed'
+- name: Set plan result
+  set_fact:
+    plan_result:
+      status: "{{ 'success' if terragrunt_plan.rc == 0 else 'failed' }}"
+      output: "{{ terragrunt_plan.stdout }}"
+      error: "{{ terragrunt_plan.stderr | default('') }}"
+      summary: "{{ plan_summary }}"
+      plan_file: "{{ working_dir }}/plan.out"

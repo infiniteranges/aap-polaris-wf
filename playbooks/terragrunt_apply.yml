@@ -1,0 +1,55 @@
+---
+# Generic Terragrunt Apply Playbook
+# Executes terragrunt apply for a single component
+# This playbook is component-agnostic and reusable
+
+- name: Execute Terragrunt Apply
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Required variables (must be provided via extra_vars)
+    working_dir: "{{ working_dir | required }}"
+    deployment_id: "{{ deployment_id | required }}"
+    stack_type: "{{ stack_type | required }}"
+    component: "{{ component | required }}"
+    callback_base_url: "{{ callback_base_url | default('http://orchestration:3000') }}"
+    
+    # Optional variables
+    environment_vars: "{{ environment_vars | default({}) }}"
+
+  tasks:
+    - name: Display apply execution information
+      debug:
+        msg:
+          - "Terragrunt Apply Execution"
+          - "Component: {{ component }}"
+          - "Working Directory: {{ working_dir }}"
+          - "Deployment ID: {{ deployment_id }}"
+          - "Stack Type: {{ stack_type }}"
+
+    - name: Execute Terragrunt apply
+      include_role:
+        name: terragrunt_apply
+      vars:
+        working_dir: "{{ working_dir }}"
+        environment_vars: "{{ environment_vars }}"
+
+    - name: Send apply callback to Polaris
+      include_role:
+        name: callback_notify
+      vars:
+        callback_base_url: "{{ callback_base_url }}"
+        deployment_id: "{{ deployment_id }}"
+        stack_type: "{{ stack_type }}"
+        component: "{{ component }}"
+        phase: "apply"
+        status: "{{ apply_result.status }}"
+        outputs: "{{ apply_result.outputs | default({}) }}"
+        apply_output: "{{ apply_result.output | default('') }}"
+        error: "{{ apply_result.error | default(null) }}"
+      when: apply_result is defined
+
+    - name: Fail if apply failed
+      fail:
+        msg: "Terragrunt apply failed: {{ apply_result.error | default('Unknown error') }}"
+      when: apply_result is defined and apply_result.status == "failed"

@@ -1,0 +1,55 @@
+---
+# Generic Terragrunt Plan Playbook
+# Executes terragrunt plan for a single component
+# This playbook is component-agnostic and reusable
+
+- name: Execute Terragrunt Plan
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Required variables (must be provided via extra_vars)
+    working_dir: "{{ working_dir | required }}"
+    deployment_id: "{{ deployment_id | required }}"
+    stack_type: "{{ stack_type | required }}"
+    component: "{{ component | required }}"
+    callback_base_url: "{{ callback_base_url | default('http://orchestration:3000') }}"
+    
+    # Optional variables
+    environment_vars: "{{ environment_vars | default({}) }}"
+
+  tasks:
+    - name: Display plan execution information
+      debug:
+        msg:
+          - "Terragrunt Plan Execution"
+          - "Component: {{ component }}"
+          - "Working Directory: {{ working_dir }}"
+          - "Deployment ID: {{ deployment_id }}"
+          - "Stack Type: {{ stack_type }}"
+
+    - name: Execute Terragrunt plan
+      include_role:
+        name: terragrunt_plan
+      vars:
+        working_dir: "{{ working_dir }}"
+        environment_vars: "{{ environment_vars }}"
+
+    - name: Send plan callback to Polaris
+      include_role:
+        name: callback_notify
+      vars:
+        callback_base_url: "{{ callback_base_url }}"
+        deployment_id: "{{ deployment_id }}"
+        stack_type: "{{ stack_type }}"
+        component: "{{ component }}"
+        phase: "plan"
+        status: "{{ plan_result.status }}"
+        plan_summary: "{{ plan_result.summary | default({}) }}"
+        plan_output: "{{ plan_result.output | default('') }}"
+        error: "{{ plan_result.error | default(null) }}"
+      when: plan_result is defined
+
+    - name: Fail if plan failed
+      fail:
+        msg: "Terragrunt plan failed: {{ plan_result.error | default('Unknown error') }}"
+      when: plan_result is defined and plan_result.status == "failed"

@@ -1,61 +1,67 @@
 ---
-# Callback notification role
-# Sends HTTP POST callbacks to orchestration service
+# Generic Callback Notification Role
+# Sends status updates to Polaris orchestration service
+# This role is component-agnostic and reusable
 
-- name: Validate callback URL
+- name: Validate required variables
   assert:
     that:
-      - callback_url is defined
-      - callback_url | length > 0
-    fail_msg: "callback_url must be defined and non-empty"
-    success_msg: "Callback URL validated: {{ callback_url }}"
-  when: callback_url is defined and callback_url | length > 0
+      - callback_base_url is defined
+      - callback_base_url != ""
+      - deployment_id is defined
+      - deployment_id != ""
+      - stack_type is defined
+      - stack_type != ""
+      - component is defined
+      - component != ""
+      - phase is defined
+      - phase != ""
+      - status is defined
+      - status != ""
+    fail_msg: "All callback variables must be defined"
+    quiet: true
 
 - name: Build callback payload
   set_fact:
     callback_payload:
       deploymentId: "{{ deployment_id }}"
-      executionId: "{{ execution_id }}"
-      aapWorkflowJobId: "{{ ansible_awx_workflow_job_id | default(ansible_awx_job_id) | default('unknown') }}"
-      phase: "{{ callback_phase | default('unknown') }}"
-      status: "{{ callback_status | default('unknown') }}"
-      outputs: "{{ callback_outputs | default({}) }}"
-      error: "{{ callback_error | default('') }}"
-      planOutput: "{{ callback_plan_output | default('') }}"
-      terraformRunId: "{{ terraform_run_id | default('') }}"
+      stackType: "{{ stack_type }}"
+      component: "{{ component }}"
+      phase: "{{ phase }}"
+      status: "{{ status }}"
+      outputs: "{{ outputs | default({}) }}"
+      error: "{{ error | default(null) }}"
+      planSummary: "{{ plan_summary | default(null) }}"
+      planOutput: "{{ plan_output | default(null) }}"
+      applyOutput: "{{ apply_output | default(null) }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-  when: callback_url is defined and callback_url | length > 0
 
-- name: Send callback to orchestration service
+- name: Determine callback endpoint based on phase
+  set_fact:
+    callback_endpoint: "{{ callback_base_url }}/api/orchestration/stacks/executions/{{ deployment_id }}/{{ 'plan-callback' if phase == 'plan' else 'apply-callback' }}"
+
+- name: Send callback to Polaris
   uri:
-    url: "{{ callback_url }}/{{ callback_endpoint | default('plan_success') }}"
+    url: "{{ callback_endpoint }}"
     method: POST
-    body: "{{ callback_payload }}"
     body_format: json
-    status_code: [200, 201, 202]
-    timeout: "{{ callback_timeout }}"
+    body: "{{ callback_payload }}"
+    status_code: [200, 201, 404]
     headers:
       Content-Type: "application/json"
-  register: callback_result
-  retries: "{{ callback_retries }}"
-  delay: "{{ callback_retry_delay }}"
-  ignore_errors: "{{ callback_ignore_errors | default(false) }}"
-  when: callback_url is defined and callback_url | length > 0
+  register: callback_response
+  failed_when: false
+  ignore_errors: yes
 
-- name: Log callback result
+- name: Display callback result
   debug:
-    msg: "Callback sent successfully to {{ callback_url }}/{{ callback_endpoint | default('plan_success') }}"
-  when:
-    - callback_result is defined
-    - callback_result.status is defined
-    - callback_result.status >= 200
-    - callback_result.status < 300
+    msg:
+      - "Callback sent to: {{ callback_endpoint }}"
+      - "Status code: {{ callback_response.status | default('unknown') }}"
+      - "Response: {{ callback_response.json | default('no response') }}"
+  when: callback_response.status is defined
 
 - name: Warn if callback failed
   debug:
-    msg: "Callback failed: {{ callback_result.msg | default('Unknown error') }}"
-  when:
-    - callback_result is defined
-    - callback_result.status is defined
-    - callback_result.status >= 300
-    - callback_ignore_errors | default(false) == false
+    msg: "Warning: Callback to Polaris failed. Status: {{ callback_response.status | default('unknown') }}"
+  when: callback_response.status is not defined or callback_response.status not in [200, 201]

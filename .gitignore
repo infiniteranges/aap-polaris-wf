@@ -1,16 +1,18 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+
+# Terragrunt
+.terragrunt-cache/
+terragrunt.hcl.backup
+
 # Ansible
 *.retry
 .vault_pass
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-ENV/
 
 # IDE
 .vscode/
@@ -27,5 +29,6 @@ Thumbs.db
 *.log
 
 # Temporary files
-*.tmp
-*.bak
+/tmp/
+*.zip
+*.tar.gz
