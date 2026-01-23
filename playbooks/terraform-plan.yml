@@ -83,7 +83,7 @@
 
           resource "aws_iam_role" "this" {
             name = "{{ (tfc_variables.role_name | default(role_name | default(''))) }}"
-            {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy, '') %}
+            {% set assume_policy = tfc_variables.assume_role_policy | default(assume_role_policy | default(''), '') %}
             {% if assume_policy | length > 0 %}
             {% if assume_policy.startswith('{') or assume_policy.startswith('[') %}
             {% set escaped_policy = assume_policy | replace('\n', '\\n') | replace('\r', '') | replace('"', '\\"') %}
