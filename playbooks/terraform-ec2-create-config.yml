@@ -127,3 +127,21 @@
         dest: "{{ workspace_path }}/main.tf"
         mode: '0644'
       when: workspace_stat.stat.exists
+
+    - name: Verify main.tf was created successfully
+      stat:
+        path: "{{ workspace_path }}/main.tf"
+      register: main_tf_created
+      
+    - name: Display main.tf creation status
+      debug:
+        msg:
+          - "main.tf creation status: {{ 'SUCCESS' if main_tf_created.stat.exists else 'FAILED' }}"
+          - "File path: {{ workspace_path }}/main.tf"
+          - "File exists: {{ main_tf_created.stat.exists }}"
+          - "File size: {{ main_tf_created.stat.size | default('N/A') }} bytes"
+      
+    - name: Fail if main.tf was not created
+      fail:
+        msg: "Failed to create main.tf at {{ workspace_path }}/main.tf"
+      when: not main_tf_created.stat.exists
