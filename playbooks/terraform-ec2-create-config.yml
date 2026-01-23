@@ -17,7 +17,7 @@
     
     - name: Set workspace path (use project directory which is shared across execution nodes)
       set_fact:
-        workspace_path: "{{ ansible_stats.aggregate.workspace_path | default(project_path | default('/runner/project') + '/workspaces/' + workspace_name) }}"
+        workspace_path: "{{ ansible_stats.aggregate.workspace_path | default((project_path | default('/runner/project')) + '/workspaces/' + workspace_name) }}"
     
     - name: Display execution context
       debug:
